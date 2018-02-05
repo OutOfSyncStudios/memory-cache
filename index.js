@@ -3,6 +3,7 @@
 const __ = require('@mediaxpost/lodashext');
 const bluebird = require('bluebird');
 const Event = require('events');
+const pkg = require('./package.json');
 
 const messages = {
   ok: 'OK',
@@ -16,21 +17,25 @@ const messages = {
   wrongTypeOp: 'WRONGTYPE Operation against a key holding the wrong kind of value',
   wrongPayload: 'DUMP payload version or checksum are wrong',
   wrongArgCount: 'ERR wrong number of arguments for \'%0\' command',
-  bitopnotWrongCount: 'ERR BITOP NOT must be called with a single source key'
+  bitopnotWrongCount: 'ERR BITOP NOT must be called with a single source key',
+  indexOutOfRange: 'ERR index out of range',
+  invalidDBIndex: 'ERR invalid DB index',
+  invalidDBIndexNX: 'ERR invalid DB index, \'%0\' does not exist'
 };
 
 class MemoryCache extends Event {
   constructor(options) {
     super();
     this.databases = {};
-    this.cache = Object.create({});
-    this.databases[0] = this.cache;
+    this.databases[0] = Object.create({});
+    this.cache = this.databases[0];
     this.currentDBIndex = 0;
     this.isConnected = false;
     this.options = __.merge(Object.assign({
       debug: false,
       bypassUnsupported: false
     }), options || {});
+    this.lastSave = Date.now();
   }
 
   // ---------------------------------------
@@ -65,11 +70,36 @@ class MemoryCache extends Event {
   }
 
   swapdb(dbIndex1, dbIndex2) {
+    let index1 = parseInt(dbIndex1);
+    let index2 = parseInt(dbIndex2);
+    if (index1 === NaN || index2 == NaN) {
+      throw new Error(messages.invalidDBIndex);
+    }
+    if (!this.databases.hasOwnProperty(index1)) {
+      throw new Error(messages.invalidDBIndexNX.replace('%0', index1));
+    } else if (!this.databases.hasOwnProperty(index2)) {
+      throw new Error(messages.invalidDBIndexNX.replace('%0', index2));
+    }
+
+    // Swap databases
+    let temp = this.databases[index1];
+    this.databases[index1] = this.databases[index2];
+    this.databases[index2] = temp;
+
     return message.ok;
   }
 
   select(dbIndex) {
-    return message.ok
+    let index = parseInt(dbIndex);
+    if (index === NaN) {
+      throw new Error(messages.invalidDBIndex);
+    }
+    if (!this.databases.hasOwnProperty(index)) {
+      this.databases[index] = Object.create({});
+    }
+    this.currentDBIndex = index;
+    this.cache = this.databases[index];
+    return messages.ok
   }
 
   // ---------------------------------------
@@ -518,23 +548,243 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // Lists (Array / Queue / Stack)
   // ---------------------------------------
-  blpop() {}
-  brpop() {}
-  brpoplpush() {}
-  lindex() {}
-  linsert() {}
-  llen() {}
-  lpop() {}
-  lpush() {}
-  lpushx() {}
-  lrange() {}
-  lrem() {}
-  lset() {}
-  ltrim() {}
-  rpop() {}
-  rpoplpush() {}
-  rpush() {}
-  rpushx() {}
+  blpop(...params) {
+    this._unsupported();
+  }
+
+  brpop(...params) {
+    this._unsupported();
+  }
+
+  brpoplpush(...params) {
+    this._unsupported();
+  }
+
+  lindex(key, index) {
+    let retVal = null;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let length = this._getKey(key).length || 0;
+      if (index < 0) { index = length + index; }
+      if (index < length && index >= 0) {
+        retVal = this._getKey(key)[index];
+      }
+    }
+
+    return retVal;
+  }
+
+  linsert(key, before, pivot, value) {
+    let retVal = -1;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let length = this._getKey(key).length || 0;
+      if (pivot < length ) {
+        let add = 0;
+        if (before === false || before === "after") {
+          add = 1;
+        }
+        v = this._getKey(key);
+        v.splice(pivot + add, 0, value);
+        this._setKey(key, v);
+      }
+    }
+
+    return retVal;
+  }
+
+  llen(key) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      retVal = this._getKey(key).length || 0;
+    }
+
+    return retVal;
+  }
+
+  lpop(key) {
+    let retVal = null;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      v = this._getKey(key);
+      retVal = v.shift()
+      this._setKey(key, v);
+    }
+
+    return retVal;
+  }
+
+  lpush(key, value) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+    } else {
+      this.cache[key] = this._makeKey([], 'list');
+    }
+
+    let v = this._getKey(key);
+    v.splice(0, 0, value);
+    this._setKey(key, v);
+    retVal = v.length;
+    return retVal;
+  }
+
+  lpushx(key, value) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      v.splice(0, 0, value);
+      this._setKey(key, v);
+      retVal = v.length;
+    }
+
+    return retVal;
+  }
+
+  lrange(key, start, stop) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      let length = v.length;
+      if (stop < 0) { stop = length + stop; }
+      if (start < 0) { start = length + start; }
+      if (start < 0) { start = 0; }
+      if (stop >= 0 && stop >= start) {
+        let size = stop - start + 1;
+        for (let itr = start; itr < size; itr++) {
+          retVal.push(v[itr]);
+        }
+      }
+    }
+    return retVal;
+  }
+
+  lrem(key, count, value) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      let length = v.lenth;
+      let dir = (count < 0) ? -1 : 1;
+      let count = Math.abs(count);
+      count = (count === 0) ? length : count;
+      let pos = (dir < 0) ? count : 0;
+      let itr = 0;
+
+      while (itr < count && (pos < length || pos >= 0))
+      {
+        if (v[pos] == value) {
+          v.splice(pos, 1);
+          retVal++;
+          itr++;
+        }
+        pos += dir;
+      }
+      this._setKey(key, v);
+    }
+
+    return retVal;
+  }
+
+  lset(key, index, value) {
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      index = parseInt(index);
+      if (index === NaN) {
+        throw new Error(messages.noint);
+      }
+      if (index < 0 || index >= v.length) {
+        throw new Error(messages.indexOutOfRange);
+      }
+      v[index] = value;
+      this._setKey(key, v);
+    } else {
+      throw new Error(messages.nokey);
+    }
+
+    return messages.ok;
+  }
+
+  ltrim(key, start, stop) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      let length = v.length;
+      if (stop < 0) { stop = length + stop; }
+      if (start < 0) { start = length + start; }
+      if (start < 0 || start >= length) {
+        throw new Error(messages.indexOutOfRange);
+      }
+      console.log(`${start} => ${stop} :: ${length}`);
+      if (stop >= 0 && stop >= start) {
+        // Left Trim
+        for (let itr = 0; itr < start; itr++) {
+          v.shift();
+        }
+        // Right Trim
+        for (let itr = stop + 1; itr < length; itr++) {
+          v.pop();
+        }
+        this._setKey(key, v);
+      }
+    }
+
+    return messages.ok;
+  }
+
+  rpop(key) {
+    let retVal = null;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      v = this._getKey(key);
+      retVal = v.pop();
+      this._setKey(key, v);
+    }
+
+    return retVal;
+  }
+
+  rpoplpush(sourcekey, destkey) {
+    let retVal = this.rpop(sourcekey);
+    if (retVal !== null) {
+      this.lpush(destkey, retVal);
+    }
+
+    return retVal;
+  }
+
+  rpush(key, value) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+    } else {
+      this.cache[key] = this._makeKey([], 'list');
+    }
+
+    let v = this._getKey(key);
+    v.push(value);
+    this._setKey(key, v);
+    retVal = v.length;
+    return retVal;
+  }
+
+  rpushx(key, value) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      v.push(value);
+      this._setKey(key, v);
+      retVal = v.length;
+    }
+
+    return retVal;
+  }
 
   // ---------------------------------------
   // Pub /Sub
@@ -549,33 +799,127 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // Scripting
   // ---------------------------------------
-  eval() {}
-  evalsha() {}
-  script() {}
+  eval(...params) {
+    this._unsupported();
+  }
+
+  evalsha(...params) {
+    this._unsupported();
+  }
+
+  script(...params) {
+    this._unsupported();
+  }
 
   // ---------------------------------------
   // ## Server ##
   // ---------------------------------------
 
-  bgrewriteaof() {}
-  bgsave() {}
-  client() {}
-  command() {}
-  config() {}
-  dbsize() {}
-  debug() {}
-  flushall() {}
-  flushdb() {}
-  info() {}
-  lastsave() {}
-  monitor() {}
-  role() {}
-  save() {}
-  shutdown() {}
-  slaveof() {}
-  slowlog() {}
-  sync() {}
-  time() {}
+  bgrewriteaof() {
+    this._unsupported();
+  }
+
+  bgsave() {
+    this.lastSave = Date.now();
+    return messages.ok;
+  }
+
+  client(...params) {
+    this._unsupported();
+  }
+
+  command(...params) {
+    this._unsupported();
+  }
+
+  config(...params) {
+    this._unsupported();
+  }
+
+  dbsize() {
+    return Object.keys(this.cache).length;
+  }
+
+  debug(command, ...params) {
+    switch(command) {
+      default:
+        this._unsupported();
+        break;
+    }
+  }
+
+  flushall() {
+    this.currentDBIndex = 0
+    delete this.cache;
+    delete this.databases;
+    this.databases = Object.assign({});
+    this.databases[this.currentDBIndex] = Object.assign({});
+    this.cache = this.databases[this.currentDBIndex];
+
+    return messages.ok;
+  }
+
+  flushall_async() {
+    this.flushall();
+  }
+
+  flushdb() {
+    delete this.cache;
+    delete this.databases[this.currentDBIndex];
+    this.databases[this.currentDBIndex] = Object.assign({});
+    this.cache = this.databases[this.currentDBIndex];
+
+    return messages.ok;
+  }
+
+  info(section) {
+    return '';
+  }
+
+  lastsave() {
+    return this.lastSave;
+  }
+
+  monitor() {
+    this._unsupported();
+  }
+
+  role() {
+    return ['master', 0, null];
+  }
+
+  save() {
+    this.lastSave = Date.now();
+    return messages.ok;
+  }
+
+  shutdown() {
+    this._unsupported();
+  }
+
+  slaveof(host, port) {
+    this._unsupported();
+  }
+
+  slowlog(command, param) {
+    this._unsupported();
+  }
+
+  sync() {
+    this._unsupported();
+  }
+
+  time() {
+    const retVal = [];
+    let now = Date.now();
+    let rawSeconds = now / 1000;
+    let seconds = Math.floor(rawSeconds);
+    let micro = Math.floor((rawSeconds - seconds) * 1000000);
+    retVal.push(seconds);
+    retVal.push(micro);
+
+    return retVal;
+  }
 
   // ---------------------------------------
   // ## Sets ##
@@ -909,13 +1253,34 @@ class MemoryCache extends Event {
   }
 
   // ---------------------------------------
-  // ## Transactoins ##
+  // ## Transactions (Atomic) ##
   // ---------------------------------------
-  discard() {}
-  exec() {}
-  multi() {}
-  unwatch() {}
-  watch() {}
+  // TODO: Transaction Queues and retrofitting all the methods so that they can be used when in "multi" mode
+  // https://redis.io/topics/transactions
+  discard() {
+    // Clear the queue mode, drain the queue, empty the watch list
+    this._unsupported();
+  }
+
+  exec() {
+    // Run the queue and clear queue mode
+    this._unsupported();
+  }
+
+  multi() {
+    // Set Queue mode active
+    this._unsupported();
+  }
+
+  unwatch() {
+    // remove key from watch list
+    this._unsupported();
+  }
+
+  watch() {
+    // Add key to watch list
+    this._unsupported();
+  }
 
   // ---------------------------------------
   // ## Internal - Util ##
@@ -967,6 +1332,7 @@ class MemoryCache extends Event {
   }
 
   _key(key) {
+    this.cache[key].lastAccess = Date.now();
     return this.cache[key];
   }
 
@@ -1079,6 +1445,7 @@ class MemoryCache extends Event {
 
   _setKey(key, value) {
     this.cache[key].value = value;
+    this.cache[key].lastAccess = Date.now();
   }
 }
 
