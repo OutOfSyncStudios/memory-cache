@@ -608,7 +608,7 @@ class MemoryCache extends Event {
     if (this._hasKey(key)) {
       this._testType(key, 'list', true);
       v = this._getKey(key);
-      retVal = v.shift()
+      retVal = v.shift();
       this._setKey(key, v);
     }
 
@@ -922,24 +922,237 @@ class MemoryCache extends Event {
   }
 
   // ---------------------------------------
-  // ## Sets ##
+  // ## Sets (Unique Lists)##
   // ---------------------------------------
+  sadd(key, ...members) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+    } else {
+      this.cache[key] = this._makeKey([], 'set');
+    }
+    let v = this._getKey(key);
+    let length = v.length;
+    let nv = __.union(v, members);
+    let newlength = nv.length;
+    retVal = newlength - length;
+    this._setKey(key, nv);
 
-  sadd() {}
-  scard() {}
-  sdiff() {}
-  sdiffstore() {}
-  sinter() {}
-  sinterstore() {}
-  sismember() {}
-  smembers() {}
-  smove() {}
-  spop() {}
-  srandmember() {}
-  srem() {}
-  sunion() {}
-  sunionstore() {}
-  sscan() {}
+    return retVal;
+  }
+
+  scard() {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      retVal = this._getKey(key).length;
+    }
+    return retVal;
+  }
+
+  sdiff(key, ...keys) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      retVal = this._getKey(key);
+    }
+
+    if (retVal.length !== 0) {
+      for (let idx in keys) {
+        if (keys.hasOwnProperty(idx)) {
+          diffkey = keys[idx];
+          let diffval = [];
+          if (this._hasKey(diffkey)) {
+            this._testType(diffkey, 'set', true);
+            diffval = this._getKey(diffkey);
+          }
+          retVal = __.difference(retVal, diffval);
+        }
+      }
+    }
+
+    return retVal;
+  }
+
+  sdiffstore(destkey, key, ...keys) {
+    let retset = this.sdiff(key, keys);
+    this.cache[destkey] = this._makeKey(retset, 'set');
+    return retset.length;
+  }
+
+  sinter(key, ...keys) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      retVal = this._getKey(key);
+    }
+
+    if (retVal.length !== 0) {
+      for (let idx in keys) {
+        if (keys.hasOwnProperty(idx)) {
+          diffkey = keys[idx];
+          let diffval = [];
+          if (this._hasKey(diffkey)) {
+            this._testType(diffkey, 'set', true);
+            diffval = this._getKey(diffkey);
+          }
+          retVal = __.intersection(retVal, diffval);
+        }
+      }
+    }
+
+    return retVal;
+  }
+
+  sinterstore(destkey, key, ...keys) {
+    let retset = this.sinter(key, keys);
+    this.cache[destkey] = this._makeKey(retset, 'set');
+    return retset.length;
+  }
+
+  sismember(key, member) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      let v = this._getKey(key);
+      if (v.includes(member)) {
+        retVal = 1;
+      }
+    }
+
+    return retVal;
+  }
+
+  smembers(key) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      retVal = this._getKey(key);
+    }
+    return retVal;
+  }
+
+  smove(sourcekey, destkey, member) {
+    let retVal = 0;
+    if (this._hasKey(sourcekey)) {
+      this._testType(sourcekey, 'set', true);
+      let v = this._getKey(sourcekey);
+      let idx = v.findIndex(member);
+      if (idx !== -1) {
+        this.sadd(destkey, member);
+        v.splice(idx, 1);
+        retVal = 1;
+      }
+    }
+    return retVal;
+  }
+
+  spop(key, count) {
+    let retVal = [];
+    count = count || 1;
+    count = parseInt(count);
+    if (count === NaN) {
+      throw new Error(messages.noint);
+    }
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      let v = this._getKey(key);
+      let length = v.length;
+      count = (count > length) ? length : count;
+      for (let itr = 0; itr < count; itr++) {
+        retVal.push(v.pop());
+      }
+    }
+
+    return retVal;
+  }
+
+  srandmember(key, count) {
+    let retVal = [];
+    let nullBehavior = __.hasValue(count);
+    count = count || 1;
+    count = parseInt(count);
+    if (count === NaN) {
+      throw new Error(messages.noint);
+    }
+
+    let uniqueBehavior = (count >= 0);
+    if (!uniqueBehavior) { count = -count; }
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      let v = this._getKey(key);
+      let length = v.length;
+      if (uniqueBehavior) {
+        for (let itr = 0; (itr < count && itr < length); itr++) {
+          retVal.push(v[itr]);
+        }
+      } else {
+        for (let itr = 0; itr < count; itr++) {
+          retVal.push(v[this.randInt(0, length-1)]);
+        }
+      }
+    } else {
+      if (nullBehavior) { retVal = null; }
+    }
+
+    return retVal;
+  }
+
+  srem(key, ...members) {
+    let retVal = 0;
+    if (this._hasKey(sourcekey)) {
+      this._testType(sourcekey, 'set', true);
+      let v = this._getKey(sourcekey);
+      for (var idx in members) {
+        if (members.hasOwnProperty(idx)) {
+          let member = members[idx];
+          let idx = v.findIndex(member);
+          if (idx !== -1) {
+            v.splice(idx, 1);
+            retVal++;
+          }
+        }
+      }
+      this._setKey(key, v);
+    }
+    return retVal;
+  }
+
+  sscan(...params) {
+    this._unsupported();
+  }
+
+  sunion(key, ...keys) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      retVal = this._getKey(key);
+    }
+
+    if (retVal.length !== 0) {
+      for (let idx in keys) {
+        if (keys.hasOwnProperty(idx)) {
+          diffkey = keys[idx];
+          let diffval = [];
+          if (this._hasKey(diffkey)) {
+            this._testType(diffkey, 'set', true);
+            diffval = this._getKey(diffkey);
+          }
+          retVal = __.union(retVal, diffval);
+        }
+      }
+    }
+
+    return retVal;
+  }
+
+  sunionstore(destkey, key, ...keys) {
+    let retset = this.sunion(key, keys);
+    this.cache[destkey] = this._makeKey(retset, 'set');
+    return retset.length;
+  }
 
   // ---------------------------------------
   // ## Sorted Sets ##
