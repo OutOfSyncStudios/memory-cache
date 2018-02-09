@@ -24,7 +24,7 @@ npm install @mediaxpost/memory-cache
 const MemoryCache = require('@mediaxpost/memory-cache');
 const client = new MemoryCache({ bypassUnsupported: true });
 
-client.connect();
+client.createClient();
 client.set("TestKey", 10);
 client.get("TestKey");
 ```
@@ -40,59 +40,68 @@ const MemoryCache = require('@mediaxpost/memory-cache');
 const client = new MemoryCache({ bypassUnsupported: true });
 ```
 
-## MemoryCache.connect()
+## MemoryCache.createClient()
 Connect to the memory cache and emits the `connect` and `ready` events.
 
 ## MemoryCache.quit()
 Disconnects from the memory cache and emits the `end` event.
 
+## MemoryCache.end()
+Disconnects from the memory cache and emits the `end` event. Unlike the Redis client this is identical to calling quit.
+
 ## Redis Commands
 MemoryCache support all but a select few [Redis Commands](https://redis.io/commands) and returns then data as close to identically as possible to the [`redis` module](https://www.npmjs.com/package/redis). Any errors are thrown as exceptions which should be caught.  The commands which are unavailable are as follows:
 
- * CLUSTER
- * READONLY
- * READWRITE
- * MIGRATE
- * MOVE
- * OBJECT
- * SORT
- * WAIT
- * BLPOP
- * BRPOP
- * BRPOPLPUSH
- * EVAL
- * EVALSHA
- * SCRIPT *
- * BGREWRITEAOF
- * CLIENT *
- * COMMAND *
- * CONFIG *
- * DEBUG *
- * MONITOR
- * SHUTDOWN
- * SLAVEOF
- * SLOWLOG
- * SYNC
- * GEOADD
- * GEODIST
- * GEOHASH
- * GEOPOS
- * GEORADIUS
- * GEORADIUSBYMEMBER
- * PFADD
- * PFCOUNT
- * PFMERGE
- * BITFIELD
- * BITPOS
- * ZINTERSTORE
- * ZUNIONSTORE
- * UNWATCH
- * WATCH
- * SCAN
- * HSCAN
- * LSCAN
- * SSCAN
- * ZSCAN
+* BGREWRITEAOF
+* BITFIELD
+* BITPOS
+* BLPOP
+* BRPOP
+* BRPOPLPUSH
+* CLIENT *
+* CLUSTER
+* COMMAND *
+* CONFIG *
+* DEBUG *
+* EVAL
+* EVALSHA
+* GEOADD
+* GEODIST
+* GEOHASH
+* GEOPOS
+* GEORADIUS
+* GEORADIUSBYMEMBER
+* HSCAN
+* LSCAN
+* MIGRATE
+* MONITOR
+* MOVE
+* OBJECT
+* PFADD
+* PFCOUNT
+* PFMERGE
+* PSUBSCRIBE
+* PUBLISH
+* PUBSUB
+* PUNSUBSCRIBE
+* READONLY
+* READWRITE
+* SCAN
+* SCRIPT *
+* SHUTDOWN
+* SLAVEOF
+* SLOWLOG
+* SORT
+* SSCAN
+* SUBSCRIBE
+* SYNC
+* UNSUBSCRIBE
+* UNWATCH
+* WAIT
+* WATCH
+* ZINTERSTORE
+* ZSCAN
+* ZUNIONSTORE
 
 If an unavailable command is issued, then the module throws a "MemoryCache does not support that operation" exception, unless the option `bypassUnsupported` is set to `true` in the constructor.
 

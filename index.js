@@ -34,11 +34,8 @@ class MemoryCache extends Event {
     this.databases[0] = Object.create({});
     this.cache = this.databases[0];
     this.currentDBIndex = 0;
-    this.isConnected = false;
-    this.options = __.merge(Object.assign({
-      debug: false,
-      bypassUnsupported: false
-    }), options || {});
+    this.connected = false;
+    this.options = __.merge(Object.assign({ debug: false, bypassUnsupported: false }), options || {});
     this.lastSave = Date.now();
     this.multiMode = false;
   }
@@ -46,8 +43,8 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // Connection
   // ---------------------------------------
-  connect() {
-    this.isConnected = true;
+  createClient() {
+    this.connected = true;
     // exit multi mode if we are in it
     this.discard(true);
     this.emit('connect');
@@ -56,55 +53,57 @@ class MemoryCache extends Event {
   }
 
   quit() {
-    this.isConnected = false;
+    this.connected = false;
     // exit multi mode if we are in it
     this.discard(true);
     this.emit('end');
     return this;
   }
 
-  auth(password) {
-    return messages.ok;
+  end() {
+    return this.quit();
   }
 
-  echo(message) {
-    return message;
+  auth(password, callback) {
+    return this._handleCallback(callback, messages.ok);
   }
 
-  ping(message) {
-    if (__.isUnset(message)) {
-      return messages.pong;
-    }
-    return message;
+  echo(message, callback) {
+    return this._handleCallback(callback, message);
   }
 
-  swapdb(dbIndex1, dbIndex2) {
-    let index1 = parseInt(dbIndex1);
-    let index2 = parseInt(dbIndex2);
-    if (index1 === NaN || index2 == NaN) {
-      throw new Error(messages.invalidDBIndex);
+  ping(message, callback) {
+    message = message || messages.pong;
+    return this._handleCallback(callback, message);
+  }
+
+  swapdb(dbIndex1, dbIndex2, callback) {
+    const index1 = parseInt(dbIndex1);
+    const index2 = parseInt(dbIndex2);
+    if (isNaN(index1) || isNaN(index2)) {
+      return this._handleCallback(callback, null, messages.invalidDBIndex);
     }
     if (!this.databases.hasOwnProperty(index1)) {
-      throw new Error(messages.invalidDBIndexNX.replace('%0', index1));
+      return this._handleCallback(callback, null, messages.invalidDBIndexNX.replace('%0', index1));
     } else if (!this.databases.hasOwnProperty(index2)) {
-      throw new Error(messages.invalidDBIndexNX.replace('%0', index2));
+      return this._handleCallback(callback, null, messages.invalidDBIndexNX.replace('%0', index2));
     }
 
     // exit multi mode if we are in it
     this.discard(true);
 
     // Swap databases
-    let temp = this.databases[index1];
+    const temp = this.databases[index1];
     this.databases[index1] = this.databases[index2];
     this.databases[index2] = temp;
 
-    return message.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
-  select(dbIndex) {
-    let index = parseInt(dbIndex);
-    if (index === NaN) {
-      throw new Error(messages.invalidDBIndex);
+  select(dbIndex, callback) {
+    const index = parseInt(dbIndex);
+    if (isNaN(index)) {
+      return this._handleCallback(callback, null, messages.invalidDBIndex);
     }
     if (!this.databases.hasOwnProperty(index)) {
       this.databases[index] = Object.create({});
@@ -112,7 +111,8 @@ class MemoryCache extends Event {
     this.multiMode = false;
     this.currentDBIndex = index;
     this.cache = this.databases[index];
-    return messages.ok
+
+    return this._handleCallback(callback, messages.ok);
   }
 
   // ---------------------------------------
@@ -164,8 +164,8 @@ class MemoryCache extends Event {
     let fieldCount = 0;
     if (this._hasKey(key)) {
       this._testType(key, 'hash', true);
-      for (let c = 0; c < fields.length; c++) {
-        const field = fields[c];
+      for (let itr = 0; itr < fields.length; itr++) {
+        const field = fields[itr];
         if (this._hasField(key, field)) {
           delete this.cache[key].value[field];
           fieldCount++;
@@ -198,13 +198,10 @@ class MemoryCache extends Event {
   }
 
   hgetall(key) {
-    let retVals = [];
+    let retVals = {};
     if (this._hasKey(key)) {
       this._testType(key, 'hash', true);
-      for (var field in this._getKey(key)) {
-        retVals.push(field);
-        retVals.push(this._getField(key, field));
-      }
+      retVals = this._getKey(key);
     }
     return retVals;
   }
@@ -218,10 +215,10 @@ class MemoryCache extends Event {
   }
 
   hkeys(key) {
-    let retVal = [];
+    let retVals = [];
     if (this._hasKey(key)) {
       this._testType(key, 'hash', true);
-      retVal = this._getKey(key).keys();
+      retVals = this._getKey(key).keys();
     }
 
     return retVals;
@@ -236,8 +233,8 @@ class MemoryCache extends Event {
     if (this._hasKey(key)) {
       this._testType(key, 'hash', true);
     }
-    for (let c = 0; c < fields.length; c++) {
-      const field = fields[c];
+    for (let itr = 0; itr < fields.length; itr++) {
+      const field = fields[itr];
       let val = null;
       if (this._hasKey(key)) {
         if (this._hasField(key, field)) {
@@ -250,11 +247,30 @@ class MemoryCache extends Event {
   }
 
   hmset(key, ...params) {
-    // params should have key and field/value pairs and should be even in length
-    if (((params.legnth)  % 2) !== 0)
-    {
+    let callback;
+    let objData = [];
+
+    if (params.length < 1) {
       throw new Error(messages.wrongArgCount.replace('%0', 'hmset'));
     }
+
+    if (params.length > 0 && typeof params[params.length - 1] === 'function') {
+      callback = params.pop();
+    }
+
+    if (typeof params[0] === 'object') {
+      objData = __.flatten(__.toPairs(params.shift()));
+      if (params.length > 0) {
+        throw new Error(messages.wrongArgCount.replace('%0', 'hmset'));
+      }
+      params = objData;
+    }
+
+    // params should have key and field/value pairs and should be even in length
+    if (params.legnth % 2 !== 0) {
+      throw new Error(messages.wrongArgCount.replace('%0', 'hmset'));
+    }
+
     if (this._hasKey(key)) {
       this._testType(key, 'hash', true);
     } else {
@@ -263,12 +279,12 @@ class MemoryCache extends Event {
 
     const pairs = params.length / 2;
     for (let itr = 0; itr < pairs; itr++) {
-      let field = param[itr * 2];
-      let value = param[(itr * 2) + 1];
+      const field = params[itr * 2];
+      const value = params[itr * 2 + 1];
       this._setField(key, field, value);
     }
 
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
   hscan(key, cursor, pattern, count) {
@@ -298,7 +314,7 @@ class MemoryCache extends Event {
     return retVal;
   }
 
-  hsetnx() {
+  hsetnx(key, field, value) {
     let retVal = 0;
     if (this._hasKey(key)) {
       this._testType(key, 'hash', true);
@@ -353,8 +369,8 @@ class MemoryCache extends Event {
   // ---------------------------------------
   del(...keys) {
     let keyCount = 0;
-    for (let c = 0; c < keys.length; c++) {
-      const key = keys[c];
+    for (let itr = 0; itr < keys.length; itr++) {
+      const key = keys[itr];
       if (this._hasKey(key)) {
         delete this.cache[key];
         keyCount++;
@@ -372,9 +388,11 @@ class MemoryCache extends Event {
 
   exists(...keys) {
     let existCount = 0;
-    for (let c = 0; c < keys.length; c++) {
-      const key = keys[c];
-      if (this._hasKey(key)) { existCount++; }
+    for (let itr = 0; itr < keys.length; itr++) {
+      const key = keys[itr];
+      if (this._hasKey(key)) {
+        existCount++;
+      }
     }
     return existCount;
   }
@@ -382,7 +400,7 @@ class MemoryCache extends Event {
   expire(key, seconds) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this.cache[key].timeout = Date.now() + (parseInt(seconds) * 1000);
+      this.cache[key].timeout = Date.now() + parseInt(seconds) * 1000;
       retVal = 1;
     }
     return retVal;
@@ -394,19 +412,21 @@ class MemoryCache extends Event {
       timestamp = parseInt(timestamp) * 1000;
     }
     if (this._hasKey(key)) {
-      this.cache[c].timeout = timestamp;
+      this.cache[key].timeout = timestamp;
       retVal = 1;
     }
     return retVal;
   }
 
   keys(pattern) {
-    let keyList = [];
+    const keyList = [];
     pattern = pattern || '*';
-    let regEx = this._createRegExpGlob(pattern);
+    const regEx = this._createRegExpGlob(pattern);
     for (const key in this.cache) {
       if (this._hasKey(key)) {
-        if (__.hasValue(key.matches(regEx))) { keyList.push(key); }
+        if (__.hasValue(key.matches(regEx))) {
+          keyList.push(key);
+        }
       }
     }
     return keyList;
@@ -438,7 +458,7 @@ class MemoryCache extends Event {
   pexpire(key, milliseconds) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this.cache[key].timeout = Date.now() + (parseInt(milliseconds));
+      this.cache[key].timeout = Date.now() + parseInt(milliseconds);
       retVal = 1;
     }
     return retVal;
@@ -454,7 +474,7 @@ class MemoryCache extends Event {
       if (__.hasValue(this.cache[key].timeout)) {
         retVal = this.cache[key].timeout - Date.now();
         // Prevent unexpected errors if the actual ttl just happens to be -2 or -1
-        if (retVal < 0 && rettVal > -3) retVal = -3;
+        if (retVal < 0 && retVal > -3) { retVal = -3; }
       } else {
         retVal = -1;
       }
@@ -502,7 +522,7 @@ class MemoryCache extends Event {
     }
     let val;
     try {
-      val = JSON.parse(value)
+      val = JSON.parse(value);
     } catch (err) {
       throw new Error(messages.wrongPayload);
     }
@@ -510,7 +530,7 @@ class MemoryCache extends Event {
     if (ttl !== 0) {
       this.pexpire(key, ttl);
     }
-    return message.ok;
+    return messages.ok;
   }
 
   scan(cursor, pattern, count) {
@@ -524,9 +544,9 @@ class MemoryCache extends Event {
   }
 
   touch(...keys) {
-    let keyCount = 0;
-    for (let c = 0; c < keys.length; c++) {
-      const key = keys[c];
+    const keyCount = 0;
+    for (let itr = 0; itr < keys.length; itr++) {
+      const key = keys[itr];
       if (this._hasKey(key)) {
         this.cache[key].lastAccess = Date.now();
       }
@@ -535,7 +555,7 @@ class MemoryCache extends Event {
   }
 
   ttl(key) {
-    let keyttl = this.pttl(key);
+    const keyttl = this.pttl(key);
     if (keyttl < 0 && keyttl > -3) {
       return keyttl;
     }
@@ -543,7 +563,7 @@ class MemoryCache extends Event {
   }
 
   type(key) {
-    let keyType = 'none';
+    const keyType = 'none';
     if (this._hasKey(key)) {
       return this.cache[key].type;
     }
@@ -577,8 +597,10 @@ class MemoryCache extends Event {
     let retVal = null;
     if (this._hasKey(key)) {
       this._testType(key, 'list', true);
-      let length = this._getKey(key).length || 0;
-      if (index < 0) { index = length + index; }
+      const length = this._getKey(key).length || 0;
+      if (index < 0) {
+        index = length + index;
+      }
       if (index < length && index >= 0) {
         retVal = this._getKey(key)[index];
       }
@@ -588,18 +610,18 @@ class MemoryCache extends Event {
   }
 
   linsert(key, before, pivot, value) {
-    let retVal = -1;
+    const retVal = -1;
     if (this._hasKey(key)) {
       this._testType(key, 'list', true);
-      let length = this._getKey(key).length || 0;
-      if (pivot < length ) {
+      const length = this._getKey(key).length || 0;
+      if (pivot < length) {
         let add = 0;
-        if (before === false || before === "after") {
+        if (before === false || before === 'after') {
           add = 1;
         }
-        v = this._getKey(key);
-        v.splice(pivot + add, 0, value);
-        this._setKey(key, v);
+        const val = this._getKey(key);
+        val.splice(pivot + add, 0, value);
+        this._setKey(key, val);
       }
     }
 
@@ -620,9 +642,9 @@ class MemoryCache extends Event {
     let retVal = null;
     if (this._hasKey(key)) {
       this._testType(key, 'list', true);
-      v = this._getKey(key);
-      retVal = v.shift();
-      this._setKey(key, v);
+      const val = this._getKey(key);
+      retVal = val.shift();
+      this._setKey(key, val);
     }
 
     return retVal;
@@ -636,10 +658,10 @@ class MemoryCache extends Event {
       this.cache[key] = this._makeKey([], 'list');
     }
 
-    let v = this._getKey(key);
-    v.splice(0, 0, value);
-    this._setKey(key, v);
-    retVal = v.length;
+    const val = this._getKey(key);
+    val.splice(0, 0, value);
+    this._setKey(key, val);
+    retVal = val.length;
     return retVal;
   }
 
@@ -647,29 +669,37 @@ class MemoryCache extends Event {
     let retVal = 0;
     if (this._hasKey(key)) {
       this._testType(key, 'list', true);
-      let v = this._getKey(key);
-      v.splice(0, 0, value);
-      this._setKey(key, v);
-      retVal = v.length;
+      const val = this._getKey(key);
+      val.splice(0, 0, value);
+      this._setKey(key, val);
+      retVal = val.length;
     }
 
     return retVal;
   }
 
   lrange(key, start, stop) {
-    let retVal = [];
+    const retVal = [];
     if (this._hasKey(key)) {
       this._testType(key, 'list', true);
-      let v = this._getKey(key);
-      let length = v.length;
-      if (stop < 0) { stop = length + stop; }
-      if (start < 0) { start = length + start; }
-      if (start < 0) { start = 0; }
-      if (stop >= length) { stop = length - 1; }
+      const val = this._getKey(key);
+      const length = val.length;
+      if (stop < 0) {
+        stop = length + stop;
+      }
+      if (start < 0) {
+        start = length + start;
+      }
+      if (start < 0) {
+        start = 0;
+      }
+      if (stop >= length) {
+        stop = length - 1;
+      }
       if (stop >= 0 && stop >= start) {
-        let size = stop - start + 1;
+        const size = stop - start + 1;
         for (let itr = start; itr < size; itr++) {
-          retVal.push(v[itr]);
+          retVal.push(val[itr]);
         }
       }
     }
@@ -680,24 +710,23 @@ class MemoryCache extends Event {
     let retVal = 0;
     if (this._hasKey(key)) {
       this._testType(key, 'list', true);
-      let v = this._getKey(key);
-      let length = v.lenth;
-      let dir = (count < 0) ? -1 : 1;
-      let count = Math.abs(count);
-      count = (count === 0) ? length : count;
-      let pos = (dir < 0) ? count : 0;
+      const val = this._getKey(key);
+      const length = val.lenth;
+      const dir = count < 0 ? -1 : 1;
+      count = Math.abs(count);
+      count = count === 0 ? length : count;
+      let pos = dir < 0 ? count : 0;
       let itr = 0;
 
-      while (itr < count && (pos < length || pos >= 0))
-      {
-        if (v[pos] == value) {
-          v.splice(pos, 1);
+      while (itr < count && (pos < length || pos >= 0)) {
+        if (val[pos] === value) {
+          val.splice(pos, 1);
           retVal++;
           itr++;
         }
         pos += dir;
       }
-      this._setKey(key, v);
+      this._setKey(key, val);
     }
 
     return retVal;
@@ -706,16 +735,16 @@ class MemoryCache extends Event {
   lset(key, index, value) {
     if (this._hasKey(key)) {
       this._testType(key, 'list', true);
-      let v = this._getKey(key);
+      const val = this._getKey(key);
       index = parseInt(index);
-      if (index === NaN) {
+      if (isNaN(index)) {
         throw new Error(messages.noint);
       }
-      if (index < 0 || index >= v.length) {
+      if (index < 0 || index >= val.length) {
         throw new Error(messages.indexOutOfRange);
       }
-      v[index] = value;
-      this._setKey(key, v);
+      val[index] = value;
+      this._setKey(key, val);
     } else {
       throw new Error(messages.nokey);
     }
@@ -724,28 +753,33 @@ class MemoryCache extends Event {
   }
 
   ltrim(key, start, stop) {
-    let retVal = [];
     if (this._hasKey(key)) {
       this._testType(key, 'list', true);
-      let v = this._getKey(key);
-      let length = v.length;
-      if (stop < 0) { stop = length + stop; }
-      if (start < 0) { start = length + start; }
-      if (stop >= length) { stop = length - 1; }
+      const val = this._getKey(key);
+      const length = val.length;
+      if (stop < 0) {
+        stop = length + stop;
+      }
+      if (start < 0) {
+        start = length + start;
+      }
+      if (stop >= length) {
+        stop = length - 1;
+      }
       if (start < 0 || start >= length) {
         throw new Error(messages.indexOutOfRange);
       }
-      console.log(`${start} => ${stop} :: ${length}`);
+
       if (stop >= 0 && stop >= start) {
         // Left Trim
         for (let itr = 0; itr < start; itr++) {
-          v.shift();
+          val.shift();
         }
         // Right Trim
         for (let itr = stop + 1; itr < length; itr++) {
-          v.pop();
+          val.pop();
         }
-        this._setKey(key, v);
+        this._setKey(key, val);
       }
     }
 
@@ -756,16 +790,16 @@ class MemoryCache extends Event {
     let retVal = null;
     if (this._hasKey(key)) {
       this._testType(key, 'list', true);
-      v = this._getKey(key);
-      retVal = v.pop();
-      this._setKey(key, v);
+      const val = this._getKey(key);
+      retVal = val.pop();
+      this._setKey(key, val);
     }
 
     return retVal;
   }
 
   rpoplpush(sourcekey, destkey) {
-    let retVal = this.rpop(sourcekey);
+    const retVal = this.rpop(sourcekey);
     if (retVal !== null) {
       this.lpush(destkey, retVal);
     }
@@ -781,10 +815,10 @@ class MemoryCache extends Event {
       this.cache[key] = this._makeKey([], 'list');
     }
 
-    let v = this._getKey(key);
-    v.push(value);
-    this._setKey(key, v);
-    retVal = v.length;
+    const val = this._getKey(key);
+    val.push(value);
+    this._setKey(key, val);
+    retVal = val.length;
     return retVal;
   }
 
@@ -792,10 +826,10 @@ class MemoryCache extends Event {
     let retVal = 0;
     if (this._hasKey(key)) {
       this._testType(key, 'list', true);
-      let v = this._getKey(key);
-      v.push(value);
-      this._setKey(key, v);
-      retVal = v.length;
+      const val = this._getKey(key);
+      val.push(value);
+      this._setKey(key, val);
+      retVal = val.length;
     }
 
     return retVal;
@@ -804,12 +838,29 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // Pub /Sub
   // ---------------------------------------
-  psubscribe() {}
-  pubsub() {}
-  publish() {}
-  punsubscribe() {}
-  suscribe() {}
-  unsubscribe() {}
+  psubscribe(...params) {
+    this._unsupported();
+  }
+
+  pubsub(...params) {
+    this._unsupported();
+  }
+
+  publish(...params) {
+    this._unsupported();
+  }
+
+  punsubscribe(...params) {
+    this._unsupported();
+  }
+
+  suscribe(...params) {
+    this._unsupported();
+  }
+
+  unsubscribe(...params) {
+    this._unsupported();
+  }
 
   // ---------------------------------------
   // Scripting
@@ -829,7 +880,6 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // ## Server ##
   // ---------------------------------------
-
   bgrewriteaof() {
     this._unsupported();
   }
@@ -856,15 +906,15 @@ class MemoryCache extends Event {
   }
 
   debug(command, ...params) {
-    switch(command) {
+    switch (command) {
       default:
         this._unsupported();
         break;
     }
   }
 
-  flushall() {
-    this.currentDBIndex = 0
+  flushall(async) {
+    this.currentDBIndex = 0;
     delete this.cache;
     delete this.databases;
     this.databases = Object.assign({});
@@ -872,10 +922,6 @@ class MemoryCache extends Event {
     this.cache = this.databases[this.currentDBIndex];
 
     return messages.ok;
-  }
-
-  flushall_async() {
-    this.flushall();
   }
 
   flushdb() {
@@ -926,10 +972,10 @@ class MemoryCache extends Event {
 
   time() {
     const retVal = [];
-    let now = Date.now();
-    let rawSeconds = now / 1000;
-    let seconds = Math.floor(rawSeconds);
-    let micro = Math.floor((rawSeconds - seconds) * 1000000);
+    const now = Date.now();
+    const rawSeconds = now / 1000;
+    const seconds = Math.floor(rawSeconds);
+    const micro = Math.floor((rawSeconds - seconds) * 1000000);
     retVal.push(seconds);
     retVal.push(micro);
 
@@ -946,17 +992,17 @@ class MemoryCache extends Event {
     } else {
       this.cache[key] = this._makeKey([], 'set');
     }
-    let v = this._getKey(key);
-    let length = v.length;
-    let nv = __.union(v, members);
-    let newlength = nv.length;
+    const val = this._getKey(key);
+    const length = val.length;
+    const nval = __.union(val, members);
+    const newlength = nval.length;
     retVal = newlength - length;
-    this._setKey(key, nv);
+    this._setKey(key, nval);
 
     return retVal;
   }
 
-  scard() {
+  scard(key) {
     let retVal = 0;
     if (this._hasKey(key)) {
       this._testType(key, 'set', true);
@@ -973,9 +1019,9 @@ class MemoryCache extends Event {
     }
 
     if (retVal.length !== 0) {
-      for (let idx in keys) {
+      for (const idx in keys) {
         if (keys.hasOwnProperty(idx)) {
-          diffkey = keys[idx];
+          const diffkey = keys[idx];
           let diffval = [];
           if (this._hasKey(diffkey)) {
             this._testType(diffkey, 'set', true);
@@ -990,7 +1036,7 @@ class MemoryCache extends Event {
   }
 
   sdiffstore(destkey, key, ...keys) {
-    let retset = this.sdiff(key, keys);
+    const retset = this.sdiff(key, keys);
     this.cache[destkey] = this._makeKey(retset, 'set');
     return retset.length;
   }
@@ -1003,9 +1049,9 @@ class MemoryCache extends Event {
     }
 
     if (retVal.length !== 0) {
-      for (let idx in keys) {
+      for (const idx in keys) {
         if (keys.hasOwnProperty(idx)) {
-          diffkey = keys[idx];
+          const diffkey = keys[idx];
           let diffval = [];
           if (this._hasKey(diffkey)) {
             this._testType(diffkey, 'set', true);
@@ -1020,7 +1066,7 @@ class MemoryCache extends Event {
   }
 
   sinterstore(destkey, key, ...keys) {
-    let retset = this.sinter(key, keys);
+    const retset = this.sinter(key, keys);
     this.cache[destkey] = this._makeKey(retset, 'set');
     return retset.length;
   }
@@ -1029,8 +1075,8 @@ class MemoryCache extends Event {
     let retVal = 0;
     if (this._hasKey(key)) {
       this._testType(key, 'set', true);
-      let v = this._getKey(key);
-      if (v.includes(member)) {
+      const val = this._getKey(key);
+      if (val.includes(member)) {
         retVal = 1;
       }
     }
@@ -1051,11 +1097,11 @@ class MemoryCache extends Event {
     let retVal = 0;
     if (this._hasKey(sourcekey)) {
       this._testType(sourcekey, 'set', true);
-      let v = this._getKey(sourcekey);
-      let idx = v.findIndex(member);
+      const val = this._getKey(sourcekey);
+      const idx = val.findIndex(member);
       if (idx !== -1) {
         this.sadd(destkey, member);
-        v.splice(idx, 1);
+        val.splice(idx, 1);
         retVal = 1;
       }
     }
@@ -1063,20 +1109,20 @@ class MemoryCache extends Event {
   }
 
   spop(key, count) {
-    let retVal = [];
+    const retVal = [];
     count = count || 1;
     count = parseInt(count);
-    if (count === NaN) {
+    if (isNaN(count)) {
       throw new Error(messages.noint);
     }
 
     if (this._hasKey(key)) {
       this._testType(key, 'set', true);
-      let v = this._getKey(key);
-      let length = v.length;
-      count = (count > length) ? length : count;
+      const val = this._getKey(key);
+      const length = val.length;
+      count = count > length ? length : count;
       for (let itr = 0; itr < count; itr++) {
-        retVal.push(v.pop());
+        retVal.push(val.pop());
       }
     }
 
@@ -1085,29 +1131,30 @@ class MemoryCache extends Event {
 
   srandmember(key, count) {
     let retVal = [];
-    let nullBehavior = __.hasValue(count);
+    const nullBehavior = __.hasValue(count);
     count = count || 1;
     count = parseInt(count);
-    if (count === NaN) {
+    if (isNaN(count)) {
       throw new Error(messages.noint);
     }
 
-    let uniqueBehavior = (count >= 0);
-    if (!uniqueBehavior) { count = -count; }
+    const uniqueBehavior = count >= 0;
+    if (!uniqueBehavior) {
+      count = -count;
+    }
 
     if (this._hasKey(key)) {
       this._testType(key, 'set', true);
-      let v = this._getKey(key);
-      let length = v.length;
+      const val = this._getKey(key);
       if (uniqueBehavior) {
-        retVal = __.sampleSize(v, count);
+        retVal = __.sampleSize(val, count);
       } else {
         for (let itr = 0; itr < count; itr++) {
-          retVal.push(__.sample(v));
+          retVal.push(__.sample(val));
         }
       }
-    } else {
-      if (nullBehavior) { retVal = null; }
+    } else if (nullBehavior) {
+      retVal = null;
     }
 
     return retVal;
@@ -1115,20 +1162,20 @@ class MemoryCache extends Event {
 
   srem(key, ...members) {
     let retVal = 0;
-    if (this._hasKey(sourcekey)) {
-      this._testType(sourcekey, 'set', true);
-      let v = this._getKey(sourcekey);
-      for (var idx in members) {
-        if (members.hasOwnProperty(idx)) {
-          let member = members[idx];
-          let idx = v.findIndex(member);
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      const val = this._getKey(key);
+      for (const index in members) {
+        if (members.hasOwnProperty(index)) {
+          const member = members[index];
+          const idx = val.findIndex(member);
           if (idx !== -1) {
-            v.splice(idx, 1);
+            val.splice(idx, 1);
             retVal++;
           }
         }
       }
-      this._setKey(key, v);
+      this._setKey(key, val);
     }
     return retVal;
   }
@@ -1145,9 +1192,9 @@ class MemoryCache extends Event {
     }
 
     if (retVal.length !== 0) {
-      for (let idx in keys) {
+      for (const idx in keys) {
         if (keys.hasOwnProperty(idx)) {
-          diffkey = keys[idx];
+          const diffkey = keys[idx];
           let diffval = [];
           if (this._hasKey(diffkey)) {
             this._testType(diffkey, 'set', true);
@@ -1162,7 +1209,7 @@ class MemoryCache extends Event {
   }
 
   sunionstore(destkey, key, ...keys) {
-    let retset = this.sunion(key, keys);
+    const retset = this.sunion(key, keys);
     this.cache[destkey] = this._makeKey(retset, 'set');
     return retset.length;
   }
@@ -1170,7 +1217,6 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // ## Sorted Sets ##
   // ---------------------------------------
-
   zadd(key, ...params) {
     let retVal = 0;
     let notexists = false;
@@ -1182,8 +1228,8 @@ class MemoryCache extends Event {
     let index = 0;
     let foundIndex = -1;
     while (index < params.length && foundIndex === -1) {
-      let v = params[index];
-      if (parseFloat(v) !== NaN) {
+      const val = params[index];
+      if (!isNaN(parseFloat(val))) {
         foundIndex = index;
       }
       index++;
@@ -1197,20 +1243,20 @@ class MemoryCache extends Event {
     if (foundIndex > 0) {
       modifiers = params.slice(0, foundIndex);
     }
-    let members = params.slice(foundIndex);
+    const members = params.slice(foundIndex);
 
     if (members.length % 2 !== 0) {
       throw new Error(messages.wrongArgCount.replace('%0', 'zadd'));
     }
-    let memObj = {};
+    const memObj = {};
     for (let itr = 0, end = members.length; itr < end; itr += 2) {
-      let kn = members[itr + 1];
-      let kv = members[itr];
+      const kn = members[itr + 1];
+      const kv = members[itr];
       memObj[kn] = kv;
     }
 
     for (let itr = 0; itr < modifiers.length; itr++) {
-      let mod = modifiers[itr].toLowerCase();
+      const mod = modifiers[itr].toLowerCase();
       switch (mod) {
         case 'nx': {
           notexists = true;
@@ -1229,8 +1275,7 @@ class MemoryCache extends Event {
           break;
         }
         default: {
-          throw new Error(message.syntax);
-          break;
+          throw new Error(messages.syntax);
         }
       }
     }
@@ -1241,36 +1286,36 @@ class MemoryCache extends Event {
       this.cache[key] = this._makeKey({}, 'zset');
     }
 
-    let v = this._getKey(key);
-    let length = __.size(v);
+    const val = this._getKey(key);
+    const length = __.size(val);
     let updates = [];
 
     if (notexists && onlyexists) {
       throw new Error(messages.mutuallyExclusiveNXXX);
     } else if (onlyexists) {
-      updates = __.intersection(__.keys(v), __.keys(memObj));
+      updates = __.intersection(__.keys(val), __.keys(memObj));
     } else if (notexists) {
-      updates = __.difference(__.keys(memObj), __.keys(v));
+      updates = __.difference(__.keys(memObj), __.keys(val));
     } else {
       updates = __.keys(memObj);
     }
 
     if (increment) {
-      __.mergeWith(v, __.pick(memObj, updates), (obj, src) => {
+      __.mergeWith(val, __.pick(memObj, updates), (obj, src) => {
         return obj + src;
       });
     } else {
-      __.merge(v, __.pick(memObj, updates));
+      __.merge(val, __.pick(memObj, updates));
     }
 
-    let newlength = __.size(v);
+    const newlength = __.size(val);
     if (change) {
       retVal = updates.legnth();
     } else {
       retVal = newlength - length;
     }
 
-    this._setKey(key, v);
+    this._setKey(key, val);
 
     return retVal;
   }
@@ -1279,8 +1324,8 @@ class MemoryCache extends Event {
     let retVal = 0;
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
-      retVal = __.size(v);
+      const val = this._getKey(key);
+      retVal = __.size(val);
     }
 
     return retVal;
@@ -1288,22 +1333,24 @@ class MemoryCache extends Event {
 
   zcount(key, min, max) {
     let retVal = 0;
-    let mn = this._parseRange(min);
-    let mx = this._parseRange(max);
-    if (mn.range === NaN || mx.range === NaN) {
+    const mn = this._parseRange(min);
+    const mx = this._parseRange(max);
+    if (isNaN(mn.range) || isNaN(mx.range)) {
       throw new Error(messages.nofloat);
     }
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
-      for (let memberIndex in v) {
-        let top, bottom, val;
-        if (v.hasOwnProperty(memberIndex)) {
-          val = v[memberIndex];
-          bottom = (mn.exclusive)?(val > mn.range):(val >= mn.range);
-          top = (mx.exclusive)?(val < mx.range):(val <= mx.range);
-          if (top && bottom) { retVal++; }
+      const val = this._getKey(key);
+      let top, bottom, memval;
+      for (const memberIndex in val) {
+        if (val.hasOwnProperty(memberIndex)) {
+          memval = val[memberIndex];
+          bottom = mn.exclusive ? memval > mn.range : memval >= mn.range;
+          top = mx.exclusive ? memval < mx.range : memval <= mx.range;
+          if (top && bottom) {
+            retVal++;
+          }
         }
       }
     }
@@ -1312,8 +1359,8 @@ class MemoryCache extends Event {
   }
 
   zincrby(key, increment, member) {
-    let incr = parseFloat(increment)
-    if (incr === NaN || __.isUnset(keyValue)) {
+    const incr = parseFloat(increment);
+    if (isNaN(incr) || __.isUnset(incr)) {
       throw new Error(messages.nofloat);
     }
 
@@ -1327,7 +1374,7 @@ class MemoryCache extends Event {
     if (this._hasField(key, member)) {
       value = this._getField(key, member);
     } else {
-      value = 0.0;
+      value = 0;
     }
 
     value += incr;
@@ -1342,27 +1389,39 @@ class MemoryCache extends Event {
 
   zlexcount(key, min, max) {
     let retVal = 0;
-    let mn = this._parseLexRange(min);
-    let mx = this._parseLexRange(max);
+    const mn = this._parseLexRange(min);
+    const mx = this._parseLexRange(max);
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
-      for (let memberIndex in v) {
-        let top, bottom, val;
-        if (v.hasOwnProperty(memberIndex)) {
-          val = memberIndex;
-          if (mn.everything) { bottom = false; }
-          else if (mn.nothing) { bottom = (val >= ''); }
-          else if (mn.exclusive) { bottom = (val > mn.range); }
-          else { bottom = (val >= mn.range); }
+      const val = this._getKey(key);
+      let top, bottom, memval;
+      for (const memberIndex in val) {
+        if (val.hasOwnProperty(memberIndex)) {
+          memval = memberIndex;
+          if (mn.everything) {
+            bottom = false;
+          } else if (mn.nothing) {
+            bottom = memval >= '';
+          } else if (mn.exclusive) {
+            bottom = memval > mn.range;
+          } else {
+            bottom = memval >= mn.range;
+          }
 
-          if (mx.nothing) { top = false; }
-          else if (mx.everything) { top = ('' <= val); }
-          else if (mx.exclusive) { top = (val < mx.range); }
-          else { top = (val <= mx.range); }
+          if (mx.nothing) {
+            top = false;
+          } else if (mx.everything) {
+            top = memval >= '';
+          } else if (mx.exclusive) {
+            top = memval < mx.range;
+          } else {
+            top = memval <= mx.range;
+          }
 
-          if (top && bottom) { retVal++; }
+          if (top && bottom) {
+            retVal++;
+          }
         }
       }
     }
@@ -1371,23 +1430,35 @@ class MemoryCache extends Event {
   }
 
   zrange(key, start, stop, withscores) {
-    let retVal = [];
+    const retVal = [];
     withscores = withscores || false;
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
-      let length = __.size(v);
-      if (stop < 0) { stop = length + stop; }
-      if (start < 0) { start = length + start; }
-      if (start < 0) { start = 0; }
-      if (stop >= length) { stop = length - 1; }
+      const val = this._getKey(key);
+      const length = __.size(val);
+      if (stop < 0) {
+        stop = length + stop;
+      }
+      if (start < 0) {
+        start = length + start;
+      }
+      if (start < 0) {
+        start = 0;
+      }
+      if (stop >= length) {
+        stop = length - 1;
+      }
       if (stop >= 0 && stop >= start) {
-        let size = stop - start + 1;
-        let sorted = __.sortBy(__.toPairs(v), (o) => { return o[1]; });
+        const size = stop - start + 1;
+        const sorted = __.sortBy(__.toPairs(val), (ob) => {
+          return ob[1];
+        });
         for (let itr = start; itr < size; itr++) {
           retVal.push(sorted[itr][0]);
-          if (withscores) { retVal.push(sorted[itr][1]); }
+          if (withscores) {
+            retVal.push(sorted[itr][1]);
+          }
         }
       }
     }
@@ -1396,8 +1467,8 @@ class MemoryCache extends Event {
 
   zrangebylex(key, min, max, ...params) {
     let retVal = [];
-    let mn = this._parseLexRange(min);
-    let mx = this._parseLexRange(max);
+    const mn = this._parseLexRange(min);
+    const mx = this._parseLexRange(max);
     let limit = false;
     let offset;
     let count;
@@ -1409,7 +1480,7 @@ class MemoryCache extends Event {
         throw new Error(messages.syntax);
       }
 
-      if (params[0].toString().toLowerCase() === "limit") {
+      if (params[0].toString().toLowerCase() === 'limit') {
         offset = parseInt(params[1]);
         count = parseInt(params[2]);
       } else {
@@ -1417,36 +1488,55 @@ class MemoryCache extends Event {
         count = parseInt(params[1]);
       }
 
-      if (offset === NaN || count === NaN) {
+      if (isNaN(offset) || isNaN(count)) {
         throw new Error(messages.noint);
       }
     }
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
-      let sorted = __.sortBy(__.sortBy(__.toPairs(v), (o) => { return o[1]; }), (o) => { return o[0] });
-      for (let memberIndex in sorted) {
-        let top, bottom, val;
+      const val = this._getKey(key);
+      const sorted = __.sortBy(
+        __.sortBy(__.toPairs(val), (ob) => {
+          return ob[1];
+        }),
+        (ob) => {
+          return ob[0];
+        }
+      );
+      let top, bottom, memval;
+      for (const memberIndex in sorted) {
         if (sorted.hasOwnProperty(memberIndex)) {
-          val = sorted[memberIndex];
-          if (mn.everything) { bottom = false; }
-          else if (mn.nothing) { bottom = (val[0] >= ''); }
-          else if (mn.exclusive) { bottom = (val[0] > mn.range); }
-          else { bottom = (val[0] >= mn.range); }
+          memval = sorted[memberIndex];
+          if (mn.everything) {
+            bottom = false;
+          } else if (mn.nothing) {
+            bottom = memval[0] >= '';
+          } else if (mn.exclusive) {
+            bottom = memval[0] > mn.range;
+          } else {
+            bottom = memval[0] >= mn.range;
+          }
 
-          if (mx.nothing) { top = false; }
-          else if (mx.everything) { top = ('' <= val[0]); }
-          else if (mx.exclusive) { top = (val[0] < mx.range); }
-          else { top = (val[0] <= mx.range); }
+          if (mx.nothing) {
+            top = false;
+          } else if (mx.everything) {
+            top = memval[0] >= '';
+          } else if (mx.exclusive) {
+            top = memval[0] < mx.range;
+          } else {
+            top = memval[0] <= mx.range;
+          }
 
-          if (top && bottom) { retVal.push(val[0]); }
+          if (top && bottom) {
+            retVal.push(memval[0]);
+          }
         }
       }
     }
 
     if (limit) {
-      temp = [];
+      const temp = [];
       for (let itr = offset; itr < count && itr < retVal.length; itr++) {
         temp.push(retVal[itr]);
       }
@@ -1458,8 +1548,8 @@ class MemoryCache extends Event {
 
   zrangebyscore(key, min, max, ...params) {
     let retVal = [];
-    let mn = this._parseRange(min);
-    let mx = this._parseRange(max);
+    const mn = this._parseRange(min);
+    const mx = this._parseRange(max);
     let withscores = false;
     let limit = false;
     let offset;
@@ -1472,10 +1562,12 @@ class MemoryCache extends Event {
       }
       let itr = 0;
       while (itr < params.length) {
-        let curr = params.shift();
-        if (itr === 0 && curr.toString().toLowerCase() === 'withscores') { withscores = true; }
-        else if ((itr === 0 || itr === 1) && curr.toString().toLowerCase() === 'limit') { limit = true; }
-        else {
+        const curr = params.shift();
+        if (itr === 0 && curr.toString().toLowerCase() === 'withscores') {
+          withscores = true;
+        } else if ((itr === 0 || itr === 1) && curr.toString().toLowerCase() === 'limit') {
+          limit = true;
+        } else {
           offset = curr;
           count = params.shift();
           itr++;
@@ -1486,23 +1578,27 @@ class MemoryCache extends Event {
         itr++;
       }
 
-      if (limit && (offset === NaN || count === NaN)) {
+      if (limit && (isNaN(offset) || isNaN(count))) {
         throw new Error(messages.noint);
       }
     }
 
-    temp = [];
+    const temp = [];
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
-      let sorted = __.sortBy(__.toPairs(v), (o) => { return o[1]; });
-      for (let memberIndex in sorted) {
-        let top, bottom, val;
+      const val = this._getKey(key);
+      const sorted = __.sortBy(__.toPairs(val), (ob) => {
+        return ob[1];
+      });
+      let top, bottom, memval;
+      for (const memberIndex in sorted) {
         if (sorted.hasOwnProperty(memberIndex)) {
-          val = sorted[memberIndex];
-          bottom = (mn.exclusive)?(val[1] > mn.range):(val[1] >= mn.range);
-          top = (mx.exclusive)?(val[1] < mx.range):(val[1] <= mx.range);
-          if (top && bottom) { temp.push(val); }
+          memval = sorted[memberIndex];
+          bottom = mn.exclusive ? memval[1] > mn.range : memval[1] >= mn.range;
+          top = mx.exclusive ? memval[1] < mx.range : memval[1] <= mx.range;
+          if (top && bottom) {
+            temp.push(memval);
+          }
         }
       }
     }
@@ -1510,11 +1606,14 @@ class MemoryCache extends Event {
     if (limit) {
       for (let itr = offset; itr < count && itr < temp.length; itr++) {
         retVal.push(temp[itr][0]);
-        if (withscores) { retVal.push(temp[itr][1]); }
+        if (withscores) {
+          retVal.push(temp[itr][1]);
+        }
       }
+    } else if (withscores) {
+      retVal = __.flatten(temp);
     } else {
-      if (withscores) { retVal = __.flatten(temp); }
-      else { retVal = __.keys(__.fromPairs(temp)); }
+      retVal = __.keys(__.fromPairs(temp));
     }
 
     return retVal;
@@ -1525,17 +1624,18 @@ class MemoryCache extends Event {
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
+      const val = this._getKey(key);
       if (this._hasField(key, member)) {
-        let sorted = __.sortBy(__.toPairs(v), (o) => { return o[1]; });
-        let length = sorted.length;
+        const sorted = __.sortBy(__.toPairs(val), (ob) => {
+          return ob[1];
+        });
+        const length = sorted.length;
         let index = 0;
         let done = false;
         while (index < length && !done) {
           if (sorted[index][0] === member) {
             done = true;
-          }
-          else {
+          } else {
             index++;
           }
         }
@@ -1551,7 +1651,6 @@ class MemoryCache extends Event {
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
       for (let idx = 0; idx < members.legnth; idx++) {
         const member = members[idx];
         if (this._hasField(key, member)) {
@@ -1592,23 +1691,35 @@ class MemoryCache extends Event {
   }
 
   zrevrange(key, start, stop, withscores) {
-    let retVal = [];
+    const retVal = [];
     withscores = withscores || false;
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
-      let length = __.size(v);
-      if (stop < 0) { stop = length + stop; }
-      if (start < 0) { start = length + start; }
-      if (start < 0) { start = 0; }
-      if (stop >= length) { stop = length - 1; }
+      const val = this._getKey(key);
+      const length = __.size(val);
+      if (stop < 0) {
+        stop = length + stop;
+      }
+      if (start < 0) {
+        start = length + start;
+      }
+      if (start < 0) {
+        start = 0;
+      }
+      if (stop >= length) {
+        stop = length - 1;
+      }
       if (stop >= 0 && stop >= start) {
-        let size = stop - start + 1;
-        let sorted = __.reverse(__.sortBy(__.toPairs(v), (o) => { return o[0]; }));
+        const size = stop - start + 1;
+        const sorted = __.reverse(__.sortBy(__.toPairs(val), (ob) => {
+          return ob[1];
+        }));
         for (let itr = start; itr < size; itr++) {
           retVal.push(sorted[itr][0]);
-          if (withscores) { retVal.push(sorted[itr][1]); }
+          if (withscores) {
+            retVal.push(sorted[itr][1]);
+          }
         }
       }
     }
@@ -1617,8 +1728,8 @@ class MemoryCache extends Event {
 
   zrevrangebylex(key, min, max, ...params) {
     let retVal = [];
-    let mn = this._parseLexRange(min);
-    let mx = this._parseLexRange(max);
+    const mn = this._parseLexRange(min);
+    const mx = this._parseLexRange(max);
     let limit = false;
     let offset;
     let count;
@@ -1630,7 +1741,7 @@ class MemoryCache extends Event {
         throw new Error(messages.syntax);
       }
 
-      if (params[0].toString().toLowerCase() === "limit") {
+      if (params[0].toString().toLowerCase() === 'limit') {
         offset = parseInt(params[1]);
         count = parseInt(params[2]);
       } else {
@@ -1638,36 +1749,55 @@ class MemoryCache extends Event {
         count = parseInt(params[1]);
       }
 
-      if (offset === NaN || count === NaN) {
+      if (isNaN(offset) || isNaN(count)) {
         throw new Error(messages.noint);
       }
     }
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
-      let sorted = __.reverse(__.sortBy(__.sortBy(__.toPairs(v), (o) => { return o[1]; }), (o) => { return o[0] }));
-      for (let memberIndex in sorted) {
-        let top, bottom, val;
+      const val = this._getKey(key);
+      const sorted = __.reverse(__.sortBy(
+        __.sortBy(__.toPairs(val), (ob) => {
+          return ob[1];
+        }),
+        (ob) => {
+          return ob[0];
+        }
+      ));
+      let top, bottom, memval;
+      for (const memberIndex in sorted) {
         if (sorted.hasOwnProperty(memberIndex)) {
-          val = sorted[memberIndex];
-          if (mn.everything) { bottom = false; }
-          else if (mn.nothing) { bottom = (val[0] >= ''); }
-          else if (mn.exclusive) { bottom = (val[0] > mn.range); }
-          else { bottom = (val[0] >= mn.range); }
+          memval = sorted[memberIndex];
+          if (mn.everything) {
+            bottom = false;
+          } else if (mn.nothing) {
+            bottom = memval[0] >= '';
+          } else if (mn.exclusive) {
+            bottom = memval[0] > mn.range;
+          } else {
+            bottom = memval[0] >= mn.range;
+          }
 
-          if (mx.nothing) { top = false; }
-          else if (mx.everything) { top = ('' <= val[0]); }
-          else if (mx.exclusive) { top = (val[0] < mx.range); }
-          else { top = (val[0] <= mx.range); }
+          if (mx.nothing) {
+            top = false;
+          } else if (mx.everything) {
+            top = memval[0] >= '';
+          } else if (mx.exclusive) {
+            top = memval[0] < mx.range;
+          } else {
+            top = memval[0] <= mx.range;
+          }
 
-          if (top && bottom) { retVal.push(val[0]); }
+          if (top && bottom) {
+            retVal.push(memval[0]);
+          }
         }
       }
     }
 
     if (limit) {
-      temp = [];
+      const temp = [];
       for (let itr = offset; itr < count && itr < retVal.length; itr++) {
         temp.push(retVal[itr]);
       }
@@ -1679,8 +1809,8 @@ class MemoryCache extends Event {
 
   zrevrangebyscore(key, min, max, ...params) {
     let retVal = [];
-    let mn = this._parseRange(min);
-    let mx = this._parseRange(max);
+    const mn = this._parseRange(min);
+    const mx = this._parseRange(max);
     let withscores = false;
     let limit = false;
     let offset;
@@ -1693,10 +1823,12 @@ class MemoryCache extends Event {
       }
       let itr = 0;
       while (itr < params.length) {
-        let curr = params.shift();
-        if (itr === 0 && curr.toString().toLowerCase() === 'withscores') { withscores = true; }
-        else if ((itr === 0 || itr === 1) && curr.toString().toLowerCase() === 'limit') { limit = true; }
-        else {
+        const curr = params.shift();
+        if (itr === 0 && curr.toString().toLowerCase() === 'withscores') {
+          withscores = true;
+        } else if ((itr === 0 || itr === 1) && curr.toString().toLowerCase() === 'limit') {
+          limit = true;
+        } else {
           offset = curr;
           count = params.shift();
           itr++;
@@ -1707,23 +1839,27 @@ class MemoryCache extends Event {
         itr++;
       }
 
-      if (limit && (offset === NaN || count === NaN)) {
+      if (limit && (isNaN(offset) || isNaN(count))) {
         throw new Error(messages.noint);
       }
     }
 
-    temp = [];
+    const temp = [];
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
-      let sorted = __.reverse(__.sortBy(__.toPairs(v), (o) => { return o[1]; }));
-      for (let memberIndex in sorted) {
-        let top, bottom, val;
+      const val = this._getKey(key);
+      const sorted = __.reverse(__.sortBy(__.toPairs(val), (ob) => {
+        return ob[1];
+      }));
+      let top, bottom, memval;
+      for (const memberIndex in sorted) {
         if (sorted.hasOwnProperty(memberIndex)) {
-          val = sorted[memberIndex];
-          bottom = (mn.exclusive)?(val[1] > mn.range):(val[1] >= mn.range);
-          top = (mx.exclusive)?(val[1] < mx.range):(val[1] <= mx.range);
-          if (top && bottom) { temp.push(val); }
+          memval = sorted[memberIndex];
+          bottom = mn.exclusive ? memval[1] > mn.range : memval[1] >= mn.range;
+          top = mx.exclusive ? memval[1] < mx.range : memval[1] <= mx.range;
+          if (top && bottom) {
+            temp.push(memval);
+          }
         }
       }
     }
@@ -1731,11 +1867,14 @@ class MemoryCache extends Event {
     if (limit) {
       for (let itr = offset; itr < count && itr < temp.length; itr++) {
         retVal.push(temp[itr][0]);
-        if (withscores) { retVal.push(temp[itr][1]); }
+        if (withscores) {
+          retVal.push(temp[itr][1]);
+        }
       }
+    } else if (withscores) {
+      retVal = __.flatten(temp);
     } else {
-      if (withscores) { retVal = __.flatten(temp); }
-      else { retVal = __.keys(__.fromPairs(temp)); }
+      retVal = __.keys(__.fromPairs(temp));
     }
 
     return retVal;
@@ -1746,17 +1885,18 @@ class MemoryCache extends Event {
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
+      const val = this._getKey(key);
       if (this._hasField(key, member)) {
-        let sorted = __.reverse(__.sortBy(__.toPairs(v), (o) => { return o[1]; }));
-        let length = sorted.length;
+        const sorted = __.reverse(__.sortBy(__.toPairs(val), (ob) => {
+          return ob[1];
+        }));
+        const length = sorted.length;
         let index = 0;
         let done = false;
         while (index < length && !done) {
-          if (sorted[itr][0] === member) {
+          if (sorted[index][0] === member) {
             done = true;
-          }
-          else {
+          } else {
             index++;
           }
         }
@@ -1772,7 +1912,6 @@ class MemoryCache extends Event {
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true);
-      let v = this._getKey(key);
       if (this._hasField(key, member)) {
         retVal = this._getField(key, member);
       }
@@ -1789,12 +1928,11 @@ class MemoryCache extends Event {
     this._unsupported();
   }
 
-
   // ---------------------------------------
   // ## String Oprations ##
   // ---------------------------------------
   append(key, value) {
-    let retValue = value.length || 0;
+    const retValue = value.length || 0;
     let keyValue = '';
     if (this._hasKey(key)) {
       this._testType(key, 'string', true);
@@ -1806,6 +1944,7 @@ class MemoryCache extends Event {
     return retValue;
   }
 
+  // TODO: process start / end for bitcount
   bitcount(key, start, end) {
     let retValue = 0;
     let keyValue = '';
@@ -1816,7 +1955,7 @@ class MemoryCache extends Event {
     for (let itr = 0; itr < keyValue.length; itr++) {
       let val = keyValue.charCodeAt(itr);
       for (let jtr = 0; jtr < 16; jtr++) {
-        retValue += (val & 1);
+        retValue += val & 1;
         val >>= 1;
       }
     }
@@ -1830,25 +1969,28 @@ class MemoryCache extends Event {
   bitop(operation, destkey, ...srckeys) {
     let retVal = 0;
     let setVal = null;
-    if (srckeys.length < 1) { throw new Error(messages.wrongArgCount.replace('%0','bitop')); }
+    if (srckeys.length < 1) {
+      throw new Error(messages.wrongArgCount.replace('%0', 'bitop'));
+    }
     operation = operation.toLowerCase();
-    let keys = this.mget(srckeys);
+    const keys = this.mget(srckeys);
 
-    switch (opertaion) {
+    switch (operation) {
       case 'and':
       case 'or':
       case 'xor':
-        setVal = _strbit(opertaion, keys);
+        setVal = this._strbit(operation, keys);
         retVal = setVal.length;
         break;
       case 'not':
-        if (srckeys.legnth > 1) { throw new Error(messages.bitopnotWrongCount); }
-        setVal = _strnot(keys[0]);
+        if (srckeys.legnth > 1) {
+          throw new Error(messages.bitopnotWrongCount);
+        }
+        setVal = this._strnot(keys[0]);
         retVal = setVal.length;
         break;
       default:
         throw new Error(messages.syntax);
-        break;
     }
 
     this.set(destkey, setVal);
@@ -1877,27 +2019,26 @@ class MemoryCache extends Event {
   }
 
   getbit(key, offset) {
-    let keyValue;
     let retVal = 0;
     const byteoffset = Math.floor(offset / 16);
-    const bitoffset = offset % 16;
-    keyValue = this.get(key) || '';
+    const keyValue = this.get(key) || '';
+    let bitoffset = offset % 16;
     if (byteoffset > keyValue.length) {
       return retVal;
     }
-    const val = keyValue.charCodeAt(byteoffset);
+    let val = keyValue.charCodeAt(byteoffset);
     while (bitoffset > 0) {
       val >>= 1;
       bitoffset--;
     }
-    retVal = (val & 1);
+    retVal = val & 1;
     return retVal;
   }
 
   getrange(key, start, end) {
     const len = end - start + 1;
-    let val = this.get(key);
-    let retVal = val.substr(start, len);
+    const val = this.get(key);
+    const retVal = val.substr(start, len);
     return retVal;
   }
 
@@ -1920,21 +2061,21 @@ class MemoryCache extends Event {
     if (this._hasKey(key)) {
       this._testType(key, 'string', true);
       keyValue = parseFloat(this._getKey(key));
-      if (keyValue === NaN || __.isUnset(keyValue)) {
+      if (isNaN(keyValue) || __.isUnset(keyValue)) {
         throw new Error(messages.nofloat);
       }
     } else {
       this.cache[key] = this._makeKey('0.0', 'string');
     }
-    let val = (keyValue + amount);
+    const val = keyValue + amount;
     this._setKey(key, val.toString());
     return val;
   }
 
   mget(...keys) {
     const keyVals = [];
-    for (let c = 0; c < keys.length; c++) {
-      const key = keys[c];
+    for (let itr = 0; itr < keys.length; itr++) {
+      const key = keys[itr];
       let val = null;
       if (this._hasKey(key)) {
         if (this._testType(key, 'string')) {
@@ -1948,14 +2089,13 @@ class MemoryCache extends Event {
 
   mset(...params) {
     // params should have key and value pairs and should be even in length
-    if ((params.legnth % 2) !== 0)
-    {
+    if (params.legnth % 2 !== 0) {
       throw new Error(messages.wrongArgCount.replace('%0', 'mset'));
     }
     const pairs = params.length / 2;
     for (let itr = 0; itr < pairs; itr++) {
-      let key = param[itr * 2];
-      let value = param[(itr * 2) + 1];
+      const key = params[itr * 2];
+      const value = params[itr * 2 + 1];
       this.cache[key] = this._makeKey(value, 'string');
     }
     return messages.ok;
@@ -1965,14 +2105,13 @@ class MemoryCache extends Event {
     let retVal = 0;
 
     // params should have key and value pairs and should be even in length
-    if ((params.legnth % 2) !== 0)
-    {
+    if (params.legnth % 2 !== 0) {
       throw new Error(messages.wrongArgCount.replace('%0', 'msetnx'));
     }
     const pairs = params.length / 2;
     for (let itr = 0; itr < pairs; itr++) {
-      let key = param[itr * 2];
-      let value = param[(itr * 2) + 1];
+      const key = params[itr * 2];
+      const value = params[itr * 2 + 1];
       // Only set the value if they do not exist
       if (!this._hasKey(key)) {
         this.cache[key] = this._makeKey(value, 'string');
@@ -1988,8 +2127,8 @@ class MemoryCache extends Event {
   }
 
   set(key, value, ttl, pttl, notexist, onlyexist) {
-    let retVal = null;
-    pttl = pttl || (ttl * 1000) || null;
+    const retVal = null;
+    pttl = pttl || ttl * 1000 || null;
     if (__.hasValue(ttl) && __.hasValue(pttl)) {
       throw new Error(messages.syntax);
     }
@@ -1998,10 +2137,8 @@ class MemoryCache extends Event {
       if (notexist) {
         return retVal;
       }
-    } else {
-      if (onlyexist) {
-        return retVal;
-      }
+    } else if (onlyexist) {
+      return retVal;
     }
     this.cache[key] = this._makeKey(value, 'string', pttl);
 
@@ -2012,7 +2149,7 @@ class MemoryCache extends Event {
     value &= 1;
     const byteoffset = Math.floor(offset / 16);
     const bitoffset = offset % 16;
-    const getVal = this.get(key);
+    let getVal = this.get(key);
 
     let bitmask = 1;
 
@@ -2030,14 +2167,14 @@ class MemoryCache extends Event {
     }
 
     let code = getVal.charCodeAt(byteoffset);
-    if (value == 0) {
+    if (value === 0) {
       // Clear the specified bit
       code &= ~bitmask;
     } else {
       // Set the specified bit
       code |= bitmask;
     }
-    getVal[byteoffset] = Buffer.from([ code ]).toString();
+    getVal[byteoffset] = Buffer.from([code]).toString();
 
     this.set(key, getVal);
   }
@@ -2055,7 +2192,7 @@ class MemoryCache extends Event {
     let end = '';
     const getVal = this.get(key);
     if (__.hasValue(getVal)) {
-      let fullStr = __.padEnd(getVal, offset, '\u0000');
+      const fullStr = __.padEnd(getVal, offset, '\u0000');
       beginning = fullStr.substr(0, offset);
       end = fullStr.substr(offset + value.length);
     } else {
@@ -2078,11 +2215,10 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // ## Transactions (Atomic) ##
   // ---------------------------------------
-  // TODO: Transaction Queues and retrofitting all the methods so that they can be used when in "multi" mode
+  // TODO: Transaction Queues watch and unwatch
   // https://redis.io/topics/transactions
   // This can be accomplished by temporarily swapping this.cache to a temporary copy of the current statement
   // holding and then using __.merge on actual this.cache with the temp storage.
-
   discard(silent) {
     // Clear the queue mode, drain the queue, empty the watch list
     if (this.multiMode) {
@@ -2090,10 +2226,8 @@ class MemoryCache extends Event {
       this.tempCache = {};
       this.multiMode = false;
       this.responseMessages = [];
-    } else {
-      if (!silent) {
-        throw new Error(messages.nomulti);
-      }
+    } else if (!silent) {
+      throw new Error(messages.nomulti);
     }
     return messages.ok;
   }
@@ -2106,7 +2240,7 @@ class MemoryCache extends Event {
     this.multiMode = false;
     this.databases[this.currentDBIndex] = Object.assign(this.tempCache);
     this.cache = this.databases[this.currentDBIndex];
-    let tempMessages = this.responseMessages;
+    const tempMessages = this.responseMessages;
     tempMessages.push(messages.ok);
     this.responseMessages = [];
     return tempMessages;
@@ -2142,10 +2276,10 @@ class MemoryCache extends Event {
   }
 
   _createRegExpGlob(pattern) {
-    pattern = pattern.replace(/\./,"\.");
-    pattern = pattern.replace(/\\/,"\\");
-    pattern = pattern.replace(/\?/,".?");
-    pattern = pattern.replace(/\*/,".*");
+    pattern = pattern.replace(/\./, '.');
+    pattern = pattern.replace(/\\/, '\\');
+    pattern = pattern.replace(/\?/, '.?');
+    pattern = pattern.replace(/\*/, '.*');
     return new RegExp(`^${pattern}`);
   }
 
@@ -2158,7 +2292,9 @@ class MemoryCache extends Event {
   _testType(key, type, throwError) {
     throwError = throwError || false;
     if (this.type(key) !== type) {
-      if (throwError) { throw new Error(messages.wrongTypeOp); }
+      if (throwError) {
+        throw new Error(messages.wrongTypeOp);
+      }
       return false;
     }
     return true;
@@ -2166,36 +2302,45 @@ class MemoryCache extends Event {
 
   _parseRange(value) {
     value = value.toString() || '';
-    let excl = (value.indexOf('(') !== 0);
-    let adj = (excl)?0:1;
-    let newVal = value.replace(/[Ii]nf$/, 'Infinity');
-    let range = parseFloat(newVal.substr(adj));
-    return {
-      exclusive: excl,
-      range: range
-    };
+    const excl = value.indexOf('(') !== 0;
+    const adj = excl ? 0 : 1;
+    const newVal = value.replace(/[Ii]nf$/, 'Infinity');
+    const range = parseFloat(newVal.substr(adj));
+    return { exclusive: excl, range: range };
   }
 
   _parseLexRange(value) {
     value = value.toString() || '';
-    if (!value.match(/^[\(\[\+\-]/)) { throw new Error(messages.invalidLexRange); }
-    let excl = (value.indexOf('[') !== 0);
-    let nothing = (value.indexOf('-') === 0 && value.length === 1);
-    let everything = (value.indexOf('+') === 0 && value.length === 1);
-    let adj = (excl)?0:1;
-    if (nothing || everything) value = '';
+    if (!value.match(/^[([+-]/)) {
+      throw new Error(messages.invalidLexRange);
+    }
+    const excl = value.indexOf('[') !== 0;
+    const nothing = value.indexOf('-') === 0 && value.length === 1;
+    const everything = value.indexOf('+') === 0 && value.length === 1;
+    if (nothing || everything) { value = ''; }
     value = value.substr(1);
-    return {
-      exclusive: excl,
-      nothing: nothing,
-      everything: everything,
-      range: value
-    };
+    return { exclusive: excl, nothing: nothing, everything: everything, range: value };
   }
 
   _logReturn(message) {
-    if (this.multiMode) {
-      this.responseMessages.push(message);
+    if (__.hasValue(message)) {
+      if (this.multiMode) {
+        this.responseMessages.push(message);
+      }
+      return message;
+    }
+    return undefined;
+  }
+
+  _handleCallback(callback, message, error) {
+    const err = this._logReturn(error);
+    const msg = this._logReturn(message);
+    if (typeof callback === 'function') {
+      callback(err, msg);
+      return undefined;
+    }
+    if (err) {
+      throw new Error(err);
     }
     return message;
   }
@@ -2208,12 +2353,7 @@ class MemoryCache extends Event {
   }
 
   _makeKey(value, type, timeout) {
-    return {
-      value: value,
-      type: type,
-      timeout: timeout || null,
-      lastAccess: Date.now()
-    };
+    return { value: value, type: type, timeout: timeout || null, lastAccess: Date.now() };
   }
 
   _key(key) {
@@ -2224,17 +2364,17 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // ## Internal - Hash ##
   // ---------------------------------------
-  _addToField(key, field, amount, usefloat) {
+  _addToField(key, field, amount, useFloat) {
     useFloat = useFloat || false;
-    let fieldValue = (useFloat) ? '0.0' : '0';
+    let fieldValue = useFloat ? '0.0' : '0';
     if (this._hasKey(key)) {
       this._testType(key, 'hash', true);
       let value = 0;
       if (this._hasField(key, field)) {
         value = this._getField(key, field);
       }
-      fieldValue = (useFloat) ? parseFloat(value) : parseInt(value);
-      if (fieldValue === NaN || __.isUnset(keyValue)) {
+      fieldValue = useFloat ? parseFloat(value) : parseInt(value);
+      if (isNaN(fieldValue) || __.isUnset(fieldValue)) {
         throw new Error(useFloat ? messages.nofloat : messages.noint);
       }
     } else {
@@ -2242,7 +2382,7 @@ class MemoryCache extends Event {
     }
 
     fieldValue += amount;
-    this._setField(key,field, fieldValue.toString());
+    this._setField(key, field, fieldValue.toString());
     return fieldValue;
   }
 
@@ -2266,23 +2406,23 @@ class MemoryCache extends Event {
     if (this._hasKey(key)) {
       this._testType(key, 'string', true);
       keyValue = parseInt(this._getKey(key));
-      if (keyValue === NaN || __.isUnset(keyValue)) {
+      if (isNaN(keyValue) || __.isUnset(keyValue)) {
         throw new Error(messages.noint);
       }
     } else {
       this.cache[key] = this._makeKey('0', 'string');
     }
-    let val = (keyValue + amount);
+    const val = keyValue + amount;
     this._setKey(key, val.toString());
     return val;
   }
 
   _strnot(value) {
-    let retVal = value;
+    const retVal = value;
     const bytes = [];
     for (let itr = 0; itr < value.length; itr++) {
-      let code = retVal.charCodeAt(itr);
-      bytes.push(code ^ 0xFFFF);
+      const code = retVal.charCodeAt(itr);
+      bytes.push(code ^ 65535);
     }
     return Buffer.from(bytes).toString();
   }
@@ -2297,8 +2437,8 @@ class MemoryCache extends Event {
       next = __.padEnd(next, retVal.length, '\u0000');
       bytes = [];
       for (let jtr = 0; jtr < next.legnth; jtr++) {
-        let destCode = retVal.charCodeAt(jtr);
-        let srcCode = next.charCodeAt(jtr);
+        const destCode = retVal.charCodeAt(jtr);
+        const srcCode = next.charCodeAt(jtr);
         switch (op) {
           case 'and':
             bytes.push(destCode & srcCode);
@@ -2311,7 +2451,7 @@ class MemoryCache extends Event {
             break;
           default:
             bytes.push(destCode);
-            break
+            break;
         }
       }
       retVal = Buffer.from(bytes).toString();
@@ -2320,7 +2460,7 @@ class MemoryCache extends Event {
   }
 
   _getKey(key) {
-    let _key =  this._key(key) || {};
+    const _key = this._key(key) || {};
     if (_key.timeout && _key.timeout >= Date.now()) {
       this.del(key);
       return null;
@@ -2337,15 +2477,16 @@ class MemoryCache extends Event {
 // ---------------------------------------
 // ## Export ##
 // ---------------------------------------
-
 // Add Asyncronous functions and Uppercase variants
 bluebird.promisifyAll(MemoryCache.prototype);
-let keys = Object.getOwnPropertyNames(MemoryCache.prototype);
-for (var idx in keys) {
-  key = keys[idx];
-  if (key !== 'constructor' && key.indexOf('_') !== 0) {
-    // Add uppercase variant
-    MemoryCache.prototype[key.toUpperCase()] = MemoryCache.prototype[key];
+const keys = Object.getOwnPropertyNames(MemoryCache.prototype);
+for (const idx in keys) {
+  if (keys.hasOwnProperty(idx)) {
+    const key = keys[idx];
+    if (key !== 'constructor' && key.indexOf('_') !== 0) {
+      // Add uppercase variant
+      MemoryCache.prototype[key.toUpperCase()] = MemoryCache.prototype[key];
+    }
   }
 }
 
