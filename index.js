@@ -3,34 +3,44 @@
 const __ = require('@mediaxpost/lodashext');
 const bluebird = require('bluebird');
 const Event = require('events');
+const pkg = require('./package.json');
 
 const messages = {
   ok: 'OK',
+  queued: 'QUEUED',
   pong: 'PONG',
   noint: 'ERR value is not an integer or out of range',
   nofloat: 'ERR value is not an float or out of range',
   nokey: 'ERR no such key',
+  nomulti: 'ERR DISCARD without MULTI',
   busykey: 'ERR target key name is busy',
   syntax: 'ERR syntax error',
   unsupported: 'MemoryCache does not support that operation',
   wrongTypeOp: 'WRONGTYPE Operation against a key holding the wrong kind of value',
   wrongPayload: 'DUMP payload version or checksum are wrong',
   wrongArgCount: 'ERR wrong number of arguments for \'%0\' command',
-  bitopnotWrongCount: 'ERR BITOP NOT must be called with a single source key'
+  bitopnotWrongCount: 'ERR BITOP NOT must be called with a single source key',
+  indexOutOfRange: 'ERR index out of range',
+  invalidLexRange: 'ERR min or max not valid string range item',
+  invalidDBIndex: 'ERR invalid DB index',
+  invalidDBIndexNX: 'ERR invalid DB index, \'%0\' does not exist',
+  mutuallyExclusiveNXXX: 'ERR XX and NX options at the same time are not compatible'
 };
 
 class MemoryCache extends Event {
   constructor(options) {
     super();
     this.databases = {};
-    this.cache = Object.create({});
-    this.databases[0] = this.cache;
+    this.databases[0] = Object.create({});
+    this.cache = this.databases[0];
     this.currentDBIndex = 0;
     this.isConnected = false;
     this.options = __.merge(Object.assign({
       debug: false,
       bypassUnsupported: false
     }), options || {});
+    this.lastSave = Date.now();
+    this.multiMode = false;
   }
 
   // ---------------------------------------
@@ -38,6 +48,8 @@ class MemoryCache extends Event {
   // ---------------------------------------
   connect() {
     this.isConnected = true;
+    // exit multi mode if we are in it
+    this.discard(true);
     this.emit('connect');
     this.emit('ready');
     return this;
@@ -45,6 +57,8 @@ class MemoryCache extends Event {
 
   quit() {
     this.isConnected = false;
+    // exit multi mode if we are in it
+    this.discard(true);
     this.emit('end');
     return this;
   }
@@ -65,11 +79,40 @@ class MemoryCache extends Event {
   }
 
   swapdb(dbIndex1, dbIndex2) {
+    let index1 = parseInt(dbIndex1);
+    let index2 = parseInt(dbIndex2);
+    if (index1 === NaN || index2 == NaN) {
+      throw new Error(messages.invalidDBIndex);
+    }
+    if (!this.databases.hasOwnProperty(index1)) {
+      throw new Error(messages.invalidDBIndexNX.replace('%0', index1));
+    } else if (!this.databases.hasOwnProperty(index2)) {
+      throw new Error(messages.invalidDBIndexNX.replace('%0', index2));
+    }
+
+    // exit multi mode if we are in it
+    this.discard(true);
+
+    // Swap databases
+    let temp = this.databases[index1];
+    this.databases[index1] = this.databases[index2];
+    this.databases[index2] = temp;
+
     return message.ok;
   }
 
   select(dbIndex) {
-    return message.ok
+    let index = parseInt(dbIndex);
+    if (index === NaN) {
+      throw new Error(messages.invalidDBIndex);
+    }
+    if (!this.databases.hasOwnProperty(index)) {
+      this.databases[index] = Object.create({});
+    }
+    this.multiMode = false;
+    this.currentDBIndex = index;
+    this.cache = this.databases[index];
+    return messages.ok
   }
 
   // ---------------------------------------
@@ -518,23 +561,245 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // Lists (Array / Queue / Stack)
   // ---------------------------------------
-  blpop() {}
-  brpop() {}
-  brpoplpush() {}
-  lindex() {}
-  linsert() {}
-  llen() {}
-  lpop() {}
-  lpush() {}
-  lpushx() {}
-  lrange() {}
-  lrem() {}
-  lset() {}
-  ltrim() {}
-  rpop() {}
-  rpoplpush() {}
-  rpush() {}
-  rpushx() {}
+  blpop(...params) {
+    this._unsupported();
+  }
+
+  brpop(...params) {
+    this._unsupported();
+  }
+
+  brpoplpush(...params) {
+    this._unsupported();
+  }
+
+  lindex(key, index) {
+    let retVal = null;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let length = this._getKey(key).length || 0;
+      if (index < 0) { index = length + index; }
+      if (index < length && index >= 0) {
+        retVal = this._getKey(key)[index];
+      }
+    }
+
+    return retVal;
+  }
+
+  linsert(key, before, pivot, value) {
+    let retVal = -1;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let length = this._getKey(key).length || 0;
+      if (pivot < length ) {
+        let add = 0;
+        if (before === false || before === "after") {
+          add = 1;
+        }
+        v = this._getKey(key);
+        v.splice(pivot + add, 0, value);
+        this._setKey(key, v);
+      }
+    }
+
+    return retVal;
+  }
+
+  llen(key) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      retVal = this._getKey(key).length || 0;
+    }
+
+    return retVal;
+  }
+
+  lpop(key) {
+    let retVal = null;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      v = this._getKey(key);
+      retVal = v.shift();
+      this._setKey(key, v);
+    }
+
+    return retVal;
+  }
+
+  lpush(key, value) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+    } else {
+      this.cache[key] = this._makeKey([], 'list');
+    }
+
+    let v = this._getKey(key);
+    v.splice(0, 0, value);
+    this._setKey(key, v);
+    retVal = v.length;
+    return retVal;
+  }
+
+  lpushx(key, value) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      v.splice(0, 0, value);
+      this._setKey(key, v);
+      retVal = v.length;
+    }
+
+    return retVal;
+  }
+
+  lrange(key, start, stop) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      let length = v.length;
+      if (stop < 0) { stop = length + stop; }
+      if (start < 0) { start = length + start; }
+      if (start < 0) { start = 0; }
+      if (stop >= length) { stop = length - 1; }
+      if (stop >= 0 && stop >= start) {
+        let size = stop - start + 1;
+        for (let itr = start; itr < size; itr++) {
+          retVal.push(v[itr]);
+        }
+      }
+    }
+    return retVal;
+  }
+
+  lrem(key, count, value) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      let length = v.lenth;
+      let dir = (count < 0) ? -1 : 1;
+      let count = Math.abs(count);
+      count = (count === 0) ? length : count;
+      let pos = (dir < 0) ? count : 0;
+      let itr = 0;
+
+      while (itr < count && (pos < length || pos >= 0))
+      {
+        if (v[pos] == value) {
+          v.splice(pos, 1);
+          retVal++;
+          itr++;
+        }
+        pos += dir;
+      }
+      this._setKey(key, v);
+    }
+
+    return retVal;
+  }
+
+  lset(key, index, value) {
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      index = parseInt(index);
+      if (index === NaN) {
+        throw new Error(messages.noint);
+      }
+      if (index < 0 || index >= v.length) {
+        throw new Error(messages.indexOutOfRange);
+      }
+      v[index] = value;
+      this._setKey(key, v);
+    } else {
+      throw new Error(messages.nokey);
+    }
+
+    return messages.ok;
+  }
+
+  ltrim(key, start, stop) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      let length = v.length;
+      if (stop < 0) { stop = length + stop; }
+      if (start < 0) { start = length + start; }
+      if (stop >= length) { stop = length - 1; }
+      if (start < 0 || start >= length) {
+        throw new Error(messages.indexOutOfRange);
+      }
+      console.log(`${start} => ${stop} :: ${length}`);
+      if (stop >= 0 && stop >= start) {
+        // Left Trim
+        for (let itr = 0; itr < start; itr++) {
+          v.shift();
+        }
+        // Right Trim
+        for (let itr = stop + 1; itr < length; itr++) {
+          v.pop();
+        }
+        this._setKey(key, v);
+      }
+    }
+
+    return messages.ok;
+  }
+
+  rpop(key) {
+    let retVal = null;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      v = this._getKey(key);
+      retVal = v.pop();
+      this._setKey(key, v);
+    }
+
+    return retVal;
+  }
+
+  rpoplpush(sourcekey, destkey) {
+    let retVal = this.rpop(sourcekey);
+    if (retVal !== null) {
+      this.lpush(destkey, retVal);
+    }
+
+    return retVal;
+  }
+
+  rpush(key, value) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+    } else {
+      this.cache[key] = this._makeKey([], 'list');
+    }
+
+    let v = this._getKey(key);
+    v.push(value);
+    this._setKey(key, v);
+    retVal = v.length;
+    return retVal;
+  }
+
+  rpushx(key, value) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'list', true);
+      let v = this._getKey(key);
+      v.push(value);
+      this._setKey(key, v);
+      retVal = v.length;
+    }
+
+    return retVal;
+  }
 
   // ---------------------------------------
   // Pub /Sub
@@ -549,79 +814,981 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // Scripting
   // ---------------------------------------
-  eval() {}
-  evalsha() {}
-  script() {}
+  eval(...params) {
+    this._unsupported();
+  }
+
+  evalsha(...params) {
+    this._unsupported();
+  }
+
+  script(...params) {
+    this._unsupported();
+  }
 
   // ---------------------------------------
   // ## Server ##
   // ---------------------------------------
 
-  bgrewriteaof() {}
-  bgsave() {}
-  client() {}
-  command() {}
-  config() {}
-  dbsize() {}
-  debug() {}
-  flushall() {}
-  flushdb() {}
-  info() {}
-  lastsave() {}
-  monitor() {}
-  role() {}
-  save() {}
-  shutdown() {}
-  slaveof() {}
-  slowlog() {}
-  sync() {}
-  time() {}
+  bgrewriteaof() {
+    this._unsupported();
+  }
+
+  bgsave() {
+    this.lastSave = Date.now();
+    return messages.ok;
+  }
+
+  client(...params) {
+    this._unsupported();
+  }
+
+  command(...params) {
+    this._unsupported();
+  }
+
+  config(...params) {
+    this._unsupported();
+  }
+
+  dbsize() {
+    return Object.keys(this.cache).length;
+  }
+
+  debug(command, ...params) {
+    switch(command) {
+      default:
+        this._unsupported();
+        break;
+    }
+  }
+
+  flushall() {
+    this.currentDBIndex = 0
+    delete this.cache;
+    delete this.databases;
+    this.databases = Object.assign({});
+    this.databases[this.currentDBIndex] = Object.assign({});
+    this.cache = this.databases[this.currentDBIndex];
+
+    return messages.ok;
+  }
+
+  flushall_async() {
+    this.flushall();
+  }
+
+  flushdb() {
+    delete this.cache;
+    delete this.databases[this.currentDBIndex];
+    this.databases[this.currentDBIndex] = Object.assign({});
+    this.cache = this.databases[this.currentDBIndex];
+
+    return messages.ok;
+  }
+
+  info(section) {
+    return '';
+  }
+
+  lastsave() {
+    return this.lastSave;
+  }
+
+  monitor() {
+    this._unsupported();
+  }
+
+  role() {
+    return ['master', 0, null];
+  }
+
+  save() {
+    this.lastSave = Date.now();
+    return messages.ok;
+  }
+
+  shutdown() {
+    this._unsupported();
+  }
+
+  slaveof(host, port) {
+    this._unsupported();
+  }
+
+  slowlog(command, param) {
+    this._unsupported();
+  }
+
+  sync() {
+    this._unsupported();
+  }
+
+  time() {
+    const retVal = [];
+    let now = Date.now();
+    let rawSeconds = now / 1000;
+    let seconds = Math.floor(rawSeconds);
+    let micro = Math.floor((rawSeconds - seconds) * 1000000);
+    retVal.push(seconds);
+    retVal.push(micro);
+
+    return retVal;
+  }
 
   // ---------------------------------------
-  // ## Sets ##
+  // ## Sets (Unique Lists)##
   // ---------------------------------------
+  sadd(key, ...members) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+    } else {
+      this.cache[key] = this._makeKey([], 'set');
+    }
+    let v = this._getKey(key);
+    let length = v.length;
+    let nv = __.union(v, members);
+    let newlength = nv.length;
+    retVal = newlength - length;
+    this._setKey(key, nv);
 
-  sadd() {}
-  scard() {}
-  sdiff() {}
-  sdiffstore() {}
-  sinter() {}
-  sinterstore() {}
-  sismember() {}
-  smembers() {}
-  smove() {}
-  spop() {}
-  srandmember() {}
-  srem() {}
-  sunion() {}
-  sunionstore() {}
-  sscan() {}
+    return retVal;
+  }
+
+  scard() {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      retVal = this._getKey(key).length;
+    }
+    return retVal;
+  }
+
+  sdiff(key, ...keys) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      retVal = this._getKey(key);
+    }
+
+    if (retVal.length !== 0) {
+      for (let idx in keys) {
+        if (keys.hasOwnProperty(idx)) {
+          diffkey = keys[idx];
+          let diffval = [];
+          if (this._hasKey(diffkey)) {
+            this._testType(diffkey, 'set', true);
+            diffval = this._getKey(diffkey);
+          }
+          retVal = __.difference(retVal, diffval);
+        }
+      }
+    }
+
+    return retVal;
+  }
+
+  sdiffstore(destkey, key, ...keys) {
+    let retset = this.sdiff(key, keys);
+    this.cache[destkey] = this._makeKey(retset, 'set');
+    return retset.length;
+  }
+
+  sinter(key, ...keys) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      retVal = this._getKey(key);
+    }
+
+    if (retVal.length !== 0) {
+      for (let idx in keys) {
+        if (keys.hasOwnProperty(idx)) {
+          diffkey = keys[idx];
+          let diffval = [];
+          if (this._hasKey(diffkey)) {
+            this._testType(diffkey, 'set', true);
+            diffval = this._getKey(diffkey);
+          }
+          retVal = __.intersection(retVal, diffval);
+        }
+      }
+    }
+
+    return retVal;
+  }
+
+  sinterstore(destkey, key, ...keys) {
+    let retset = this.sinter(key, keys);
+    this.cache[destkey] = this._makeKey(retset, 'set');
+    return retset.length;
+  }
+
+  sismember(key, member) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      let v = this._getKey(key);
+      if (v.includes(member)) {
+        retVal = 1;
+      }
+    }
+
+    return retVal;
+  }
+
+  smembers(key) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      retVal = this._getKey(key);
+    }
+    return retVal;
+  }
+
+  smove(sourcekey, destkey, member) {
+    let retVal = 0;
+    if (this._hasKey(sourcekey)) {
+      this._testType(sourcekey, 'set', true);
+      let v = this._getKey(sourcekey);
+      let idx = v.findIndex(member);
+      if (idx !== -1) {
+        this.sadd(destkey, member);
+        v.splice(idx, 1);
+        retVal = 1;
+      }
+    }
+    return retVal;
+  }
+
+  spop(key, count) {
+    let retVal = [];
+    count = count || 1;
+    count = parseInt(count);
+    if (count === NaN) {
+      throw new Error(messages.noint);
+    }
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      let v = this._getKey(key);
+      let length = v.length;
+      count = (count > length) ? length : count;
+      for (let itr = 0; itr < count; itr++) {
+        retVal.push(v.pop());
+      }
+    }
+
+    return retVal;
+  }
+
+  srandmember(key, count) {
+    let retVal = [];
+    let nullBehavior = __.hasValue(count);
+    count = count || 1;
+    count = parseInt(count);
+    if (count === NaN) {
+      throw new Error(messages.noint);
+    }
+
+    let uniqueBehavior = (count >= 0);
+    if (!uniqueBehavior) { count = -count; }
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      let v = this._getKey(key);
+      let length = v.length;
+      if (uniqueBehavior) {
+        retVal = __.sampleSize(v, count);
+      } else {
+        for (let itr = 0; itr < count; itr++) {
+          retVal.push(__.sample(v));
+        }
+      }
+    } else {
+      if (nullBehavior) { retVal = null; }
+    }
+
+    return retVal;
+  }
+
+  srem(key, ...members) {
+    let retVal = 0;
+    if (this._hasKey(sourcekey)) {
+      this._testType(sourcekey, 'set', true);
+      let v = this._getKey(sourcekey);
+      for (var idx in members) {
+        if (members.hasOwnProperty(idx)) {
+          let member = members[idx];
+          let idx = v.findIndex(member);
+          if (idx !== -1) {
+            v.splice(idx, 1);
+            retVal++;
+          }
+        }
+      }
+      this._setKey(key, v);
+    }
+    return retVal;
+  }
+
+  sscan(...params) {
+    this._unsupported();
+  }
+
+  sunion(key, ...keys) {
+    let retVal = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'set', true);
+      retVal = this._getKey(key);
+    }
+
+    if (retVal.length !== 0) {
+      for (let idx in keys) {
+        if (keys.hasOwnProperty(idx)) {
+          diffkey = keys[idx];
+          let diffval = [];
+          if (this._hasKey(diffkey)) {
+            this._testType(diffkey, 'set', true);
+            diffval = this._getKey(diffkey);
+          }
+          retVal = __.union(retVal, diffval);
+        }
+      }
+    }
+
+    return retVal;
+  }
+
+  sunionstore(destkey, key, ...keys) {
+    let retset = this.sunion(key, keys);
+    this.cache[destkey] = this._makeKey(retset, 'set');
+    return retset.length;
+  }
 
   // ---------------------------------------
   // ## Sorted Sets ##
   // ---------------------------------------
 
-  zadd() {}
-  zcard() {}
-  zcount() {}
-  zincrby() {}
-  zinterstore() {}
-  zlexcount() {}
-  zrange() {}
-  zrangebylex() {}
-  zrevrangebylex() {}
-  zrangebyscore() {}
-  zrank() {}
-  zrem() {}
-  zremrangebylex() {}
-  zremrangebyrank() {}
-  zremrangebyscore() {}
-  zrevrange() {}
-  zrevrangebyscore() {}
-  zrevrank() {}
-  zscore() {}
-  zunionstore() {}
-  zscan() {}
+  zadd(key, ...params) {
+    let retVal = 0;
+    let notexists = false;
+    let onlyexists = false;
+    let change = false;
+    let increment = false;
+
+    // Look for the start of score parameters
+    let index = 0;
+    let foundIndex = -1;
+    while (index < params.length && foundIndex === -1) {
+      let v = params[index];
+      if (parseFloat(v) !== NaN) {
+        foundIndex = index;
+      }
+      index++;
+    }
+
+    if (foundIndex === -1) {
+      throw new Error(messages.wrongArgCount.replace('%0', 'zadd'));
+    }
+
+    let modifiers = [];
+    if (foundIndex > 0) {
+      modifiers = params.slice(0, foundIndex);
+    }
+    let members = params.slice(foundIndex);
+
+    if (members.length % 2 !== 0) {
+      throw new Error(messages.wrongArgCount.replace('%0', 'zadd'));
+    }
+    let memObj = {};
+    for (let itr = 0, end = members.length; itr < end; itr += 2) {
+      let kn = members[itr + 1];
+      let kv = members[itr];
+      memObj[kn] = kv;
+    }
+
+    for (let itr = 0; itr < modifiers.length; itr++) {
+      let mod = modifiers[itr].toLowerCase();
+      switch (mod) {
+        case 'nx': {
+          notexists = true;
+          break;
+        }
+        case 'xx': {
+          onlyexists = true;
+          break;
+        }
+        case 'ch': {
+          change = true;
+          break;
+        }
+        case 'incr': {
+          increment = true;
+          break;
+        }
+        default: {
+          throw new Error(message.syntax);
+          break;
+        }
+      }
+    }
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+    } else {
+      this.cache[key] = this._makeKey({}, 'zset');
+    }
+
+    let v = this._getKey(key);
+    let length = __.size(v);
+    let updates = [];
+
+    if (notexists && onlyexists) {
+      throw new Error(messages.mutuallyExclusiveNXXX);
+    } else if (onlyexists) {
+      updates = __.intersection(__.keys(v), __.keys(memObj));
+    } else if (notexists) {
+      updates = __.difference(__.keys(memObj), __.keys(v));
+    } else {
+      updates = __.keys(memObj);
+    }
+
+    if (increment) {
+      __.mergeWith(v, __.pick(memObj, updates), (obj, src) => {
+        return obj + src;
+      });
+    } else {
+      __.merge(v, __.pick(memObj, updates));
+    }
+
+    let newlength = __.size(v);
+    if (change) {
+      retVal = updates.legnth();
+    } else {
+      retVal = newlength - length;
+    }
+
+    this._setKey(key, v);
+
+    return retVal;
+  }
+
+  zcard(key) {
+    let retVal = 0;
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      retVal = __.size(v);
+    }
+
+    return retVal;
+  }
+
+  zcount(key, min, max) {
+    let retVal = 0;
+    let mn = this._parseRange(min);
+    let mx = this._parseRange(max);
+    if (mn.range === NaN || mx.range === NaN) {
+      throw new Error(messages.nofloat);
+    }
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      for (let memberIndex in v) {
+        let top, bottom, val;
+        if (v.hasOwnProperty(memberIndex)) {
+          val = v[memberIndex];
+          bottom = (mn.exclusive)?(val > mn.range):(val >= mn.range);
+          top = (mx.exclusive)?(val < mx.range):(val <= mx.range);
+          if (top && bottom) { retVal++; }
+        }
+      }
+    }
+
+    return retVal;
+  }
+
+  zincrby(key, increment, member) {
+    let incr = parseFloat(increment)
+    if (incr === NaN || __.isUnset(keyValue)) {
+      throw new Error(messages.nofloat);
+    }
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+    } else {
+      this.cache[key] = this._makeKey({}, 'zset');
+    }
+
+    let value;
+    if (this._hasField(key, member)) {
+      value = this._getField(key, member);
+    } else {
+      value = 0.0;
+    }
+
+    value += incr;
+    this._setField(key, member, value);
+
+    return value;
+  }
+
+  zinterstore(...params) {
+    this.unsupported();
+  }
+
+  zlexcount(key, min, max) {
+    let retVal = 0;
+    let mn = this._parseLexRange(min);
+    let mx = this._parseLexRange(max);
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      for (let memberIndex in v) {
+        let top, bottom, val;
+        if (v.hasOwnProperty(memberIndex)) {
+          val = memberIndex;
+          if (mn.everything) { bottom = false; }
+          else if (mn.nothing) { bottom = (val >= ''); }
+          else if (mn.exclusive) { bottom = (val > mn.range); }
+          else { bottom = (val >= mn.range); }
+
+          if (mx.nothing) { top = false; }
+          else if (mx.everything) { top = ('' <= val); }
+          else if (mx.exclusive) { top = (val < mx.range); }
+          else { top = (val <= mx.range); }
+
+          if (top && bottom) { retVal++; }
+        }
+      }
+    }
+
+    return retVal;
+  }
+
+  zrange(key, start, stop, withscores) {
+    let retVal = [];
+    withscores = withscores || false;
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      let length = __.size(v);
+      if (stop < 0) { stop = length + stop; }
+      if (start < 0) { start = length + start; }
+      if (start < 0) { start = 0; }
+      if (stop >= length) { stop = length - 1; }
+      if (stop >= 0 && stop >= start) {
+        let size = stop - start + 1;
+        let sorted = __.sortBy(__.toPairs(v), (o) => { return o[1]; });
+        for (let itr = start; itr < size; itr++) {
+          retVal.push(sorted[itr][0]);
+          if (withscores) { retVal.push(sorted[itr][1]); }
+        }
+      }
+    }
+    return retVal;
+  }
+
+  zrangebylex(key, min, max, ...params) {
+    let retVal = [];
+    let mn = this._parseLexRange(min);
+    let mx = this._parseLexRange(max);
+    let limit = false;
+    let offset;
+    let count;
+
+    // Handle parameters
+    if (params.length > 0) {
+      limit = true;
+      if (params.length < 2) {
+        throw new Error(messages.syntax);
+      }
+
+      if (params[0].toString().toLowerCase() === "limit") {
+        offset = parseInt(params[1]);
+        count = parseInt(params[2]);
+      } else {
+        offset = parseInt(params[0]);
+        count = parseInt(params[1]);
+      }
+
+      if (offset === NaN || count === NaN) {
+        throw new Error(messages.noint);
+      }
+    }
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      let sorted = __.sortBy(__.sortBy(__.toPairs(v), (o) => { return o[1]; }), (o) => { return o[0] });
+      for (let memberIndex in sorted) {
+        let top, bottom, val;
+        if (sorted.hasOwnProperty(memberIndex)) {
+          val = sorted[memberIndex];
+          if (mn.everything) { bottom = false; }
+          else if (mn.nothing) { bottom = (val[0] >= ''); }
+          else if (mn.exclusive) { bottom = (val[0] > mn.range); }
+          else { bottom = (val[0] >= mn.range); }
+
+          if (mx.nothing) { top = false; }
+          else if (mx.everything) { top = ('' <= val[0]); }
+          else if (mx.exclusive) { top = (val[0] < mx.range); }
+          else { top = (val[0] <= mx.range); }
+
+          if (top && bottom) { retVal.push(val[0]); }
+        }
+      }
+    }
+
+    if (limit) {
+      temp = [];
+      for (let itr = offset; itr < count && itr < retVal.length; itr++) {
+        temp.push(retVal[itr]);
+      }
+      retVal = temp;
+    }
+
+    return retVal;
+  }
+
+  zrangebyscore(key, min, max, ...params) {
+    let retVal = [];
+    let mn = this._parseRange(min);
+    let mx = this._parseRange(max);
+    let withscores = false;
+    let limit = false;
+    let offset;
+    let count;
+
+    // Handle parameters
+    if (params.length > 0) {
+      if (params.length > 4) {
+        throw new Error(messages.syntax);
+      }
+      let itr = 0;
+      while (itr < params.length) {
+        let curr = params.shift();
+        if (itr === 0 && curr.toString().toLowerCase() === 'withscores') { withscores = true; }
+        else if ((itr === 0 || itr === 1) && curr.toString().toLowerCase() === 'limit') { limit = true; }
+        else {
+          offset = curr;
+          count = params.shift();
+          itr++;
+          if (itr < params.length) {
+            throw new Error(messages.wrongArgCount.replace('%0', 'zrangebyscore'));
+          }
+        }
+        itr++;
+      }
+
+      if (limit && (offset === NaN || count === NaN)) {
+        throw new Error(messages.noint);
+      }
+    }
+
+    temp = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      let sorted = __.sortBy(__.toPairs(v), (o) => { return o[1]; });
+      for (let memberIndex in sorted) {
+        let top, bottom, val;
+        if (sorted.hasOwnProperty(memberIndex)) {
+          val = sorted[memberIndex];
+          bottom = (mn.exclusive)?(val[1] > mn.range):(val[1] >= mn.range);
+          top = (mx.exclusive)?(val[1] < mx.range):(val[1] <= mx.range);
+          if (top && bottom) { temp.push(val); }
+        }
+      }
+    }
+
+    if (limit) {
+      for (let itr = offset; itr < count && itr < temp.length; itr++) {
+        retVal.push(temp[itr][0]);
+        if (withscores) { retVal.push(temp[itr][1]); }
+      }
+    } else {
+      if (withscores) { retVal = __.flatten(temp); }
+      else { retVal = __.keys(__.fromPairs(temp)); }
+    }
+
+    return retVal;
+  }
+
+  zrank(key, member) {
+    let retVal = null;
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      if (this._hasField(key, member)) {
+        let sorted = __.sortBy(__.toPairs(v), (o) => { return o[1]; });
+        let length = sorted.length;
+        let index = 0;
+        let done = false;
+        while (index < length && !done) {
+          if (sorted[index][0] === member) {
+            done = true;
+          }
+          else {
+            index++;
+          }
+        }
+        retVal = index;
+      }
+    }
+
+    return retVal;
+  }
+
+  zrem(key, ...members) {
+    let retVal = 0;
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      for (let idx = 0; idx < members.legnth; idx++) {
+        const member = members[idx];
+        if (this._hasField(key, member)) {
+          delete this.cache[key].value[member];
+          retVal++;
+        }
+      }
+    }
+
+    return retVal;
+  }
+
+  zremrangebylex(key, min, max) {
+    let retVal = 0;
+    let removeKeys = [];
+    removeKeys = this.zrangebylex(key, min, max);
+    retVal = this.zrem(key, removeKeys);
+
+    return retVal;
+  }
+
+  zremrangebyrank(key, start, stop) {
+    let retVal = 0;
+    let removeKeys = [];
+    removeKeys = this.zrange(key, start, stop);
+    retVal = this.zrem(key, removeKeys);
+
+    return retVal;
+  }
+
+  zremrangebyscore(key, min, max) {
+    let retVal = 0;
+    let removeKeys = [];
+    removeKeys = this.zrangebyscore(key, min, max);
+    retVal = this.zrem(key, removeKeys);
+
+    return retVal;
+  }
+
+  zrevrange(key, start, stop, withscores) {
+    let retVal = [];
+    withscores = withscores || false;
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      let length = __.size(v);
+      if (stop < 0) { stop = length + stop; }
+      if (start < 0) { start = length + start; }
+      if (start < 0) { start = 0; }
+      if (stop >= length) { stop = length - 1; }
+      if (stop >= 0 && stop >= start) {
+        let size = stop - start + 1;
+        let sorted = __.reverse(__.sortBy(__.toPairs(v), (o) => { return o[0]; }));
+        for (let itr = start; itr < size; itr++) {
+          retVal.push(sorted[itr][0]);
+          if (withscores) { retVal.push(sorted[itr][1]); }
+        }
+      }
+    }
+    return retVal;
+  }
+
+  zrevrangebylex(key, min, max, ...params) {
+    let retVal = [];
+    let mn = this._parseLexRange(min);
+    let mx = this._parseLexRange(max);
+    let limit = false;
+    let offset;
+    let count;
+
+    // Handle parameters
+    if (params.length > 0) {
+      limit = true;
+      if (params.length < 2) {
+        throw new Error(messages.syntax);
+      }
+
+      if (params[0].toString().toLowerCase() === "limit") {
+        offset = parseInt(params[1]);
+        count = parseInt(params[2]);
+      } else {
+        offset = parseInt(params[0]);
+        count = parseInt(params[1]);
+      }
+
+      if (offset === NaN || count === NaN) {
+        throw new Error(messages.noint);
+      }
+    }
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      let sorted = __.reverse(__.sortBy(__.sortBy(__.toPairs(v), (o) => { return o[1]; }), (o) => { return o[0] }));
+      for (let memberIndex in sorted) {
+        let top, bottom, val;
+        if (sorted.hasOwnProperty(memberIndex)) {
+          val = sorted[memberIndex];
+          if (mn.everything) { bottom = false; }
+          else if (mn.nothing) { bottom = (val[0] >= ''); }
+          else if (mn.exclusive) { bottom = (val[0] > mn.range); }
+          else { bottom = (val[0] >= mn.range); }
+
+          if (mx.nothing) { top = false; }
+          else if (mx.everything) { top = ('' <= val[0]); }
+          else if (mx.exclusive) { top = (val[0] < mx.range); }
+          else { top = (val[0] <= mx.range); }
+
+          if (top && bottom) { retVal.push(val[0]); }
+        }
+      }
+    }
+
+    if (limit) {
+      temp = [];
+      for (let itr = offset; itr < count && itr < retVal.length; itr++) {
+        temp.push(retVal[itr]);
+      }
+      retVal = temp;
+    }
+
+    return retVal;
+  }
+
+  zrevrangebyscore(key, min, max, ...params) {
+    let retVal = [];
+    let mn = this._parseRange(min);
+    let mx = this._parseRange(max);
+    let withscores = false;
+    let limit = false;
+    let offset;
+    let count;
+
+    // Handle parameters
+    if (params.length > 0) {
+      if (params.length > 4) {
+        throw new Error(messages.syntax);
+      }
+      let itr = 0;
+      while (itr < params.length) {
+        let curr = params.shift();
+        if (itr === 0 && curr.toString().toLowerCase() === 'withscores') { withscores = true; }
+        else if ((itr === 0 || itr === 1) && curr.toString().toLowerCase() === 'limit') { limit = true; }
+        else {
+          offset = curr;
+          count = params.shift();
+          itr++;
+          if (itr < params.length) {
+            throw new Error(messages.wrongArgCount.replace('%0', 'zrangebyscore'));
+          }
+        }
+        itr++;
+      }
+
+      if (limit && (offset === NaN || count === NaN)) {
+        throw new Error(messages.noint);
+      }
+    }
+
+    temp = [];
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      let sorted = __.reverse(__.sortBy(__.toPairs(v), (o) => { return o[1]; }));
+      for (let memberIndex in sorted) {
+        let top, bottom, val;
+        if (sorted.hasOwnProperty(memberIndex)) {
+          val = sorted[memberIndex];
+          bottom = (mn.exclusive)?(val[1] > mn.range):(val[1] >= mn.range);
+          top = (mx.exclusive)?(val[1] < mx.range):(val[1] <= mx.range);
+          if (top && bottom) { temp.push(val); }
+        }
+      }
+    }
+
+    if (limit) {
+      for (let itr = offset; itr < count && itr < temp.length; itr++) {
+        retVal.push(temp[itr][0]);
+        if (withscores) { retVal.push(temp[itr][1]); }
+      }
+    } else {
+      if (withscores) { retVal = __.flatten(temp); }
+      else { retVal = __.keys(__.fromPairs(temp)); }
+    }
+
+    return retVal;
+  }
+
+  zrevrank(key, member) {
+    let retVal = null;
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      if (this._hasField(key, member)) {
+        let sorted = __.reverse(__.sortBy(__.toPairs(v), (o) => { return o[1]; }));
+        let length = sorted.length;
+        let index = 0;
+        let done = false;
+        while (index < length && !done) {
+          if (sorted[itr][0] === member) {
+            done = true;
+          }
+          else {
+            index++;
+          }
+        }
+        retVal = index;
+      }
+    }
+
+    return retVal;
+  }
+
+  zscore(key, member) {
+    let retVal = null;
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'zset', true);
+      let v = this._getKey(key);
+      if (this._hasField(key, member)) {
+        retVal = this._getField(key, member);
+      }
+    }
+
+    return retVal;
+  }
+
+  zunionstore(...params) {
+    this._unsupported();
+  }
+
+  zscan(...params) {
+    this._unsupported();
+  }
+
 
   // ---------------------------------------
   // ## String Oprations ##
@@ -909,13 +2076,60 @@ class MemoryCache extends Event {
   }
 
   // ---------------------------------------
-  // ## Transactoins ##
+  // ## Transactions (Atomic) ##
   // ---------------------------------------
-  discard() {}
-  exec() {}
-  multi() {}
-  unwatch() {}
-  watch() {}
+  // TODO: Transaction Queues and retrofitting all the methods so that they can be used when in "multi" mode
+  // https://redis.io/topics/transactions
+  // This can be accomplished by temporarily swapping this.cache to a temporary copy of the current statement
+  // holding and then using __.merge on actual this.cache with the temp storage.
+
+  discard(silent) {
+    // Clear the queue mode, drain the queue, empty the watch list
+    if (this.multiMode) {
+      this.cache = this.databases[this.currentDBIndex];
+      this.tempCache = {};
+      this.multiMode = false;
+      this.responseMessages = [];
+    } else {
+      if (!silent) {
+        throw new Error(messages.nomulti);
+      }
+    }
+    return messages.ok;
+  }
+
+  exec() {
+    // Run the queue and clear queue mode
+    if (!this.multiMode) {
+      throw new Error(messages.nomulti);
+    }
+    this.multiMode = false;
+    this.databases[this.currentDBIndex] = Object.assign(this.tempCache);
+    this.cache = this.databases[this.currentDBIndex];
+    let tempMessages = this.responseMessages;
+    tempMessages.push(messages.ok);
+    this.responseMessages = [];
+    return tempMessages;
+  }
+
+  multi() {
+    // Set Queue mode active
+    this.multiMode = true;
+    this.tempCache = Object.assign(this.cache);
+    this.cache = this.tempCache;
+
+    return messages.ok;
+  }
+
+  unwatch() {
+    // remove key from watch list
+    this._unsupported();
+  }
+
+  watch() {
+    // Add key to watch list
+    this._unsupported();
+  }
 
   // ---------------------------------------
   // ## Internal - Util ##
@@ -950,6 +2164,42 @@ class MemoryCache extends Event {
     return true;
   }
 
+  _parseRange(value) {
+    value = value.toString() || '';
+    let excl = (value.indexOf('(') !== 0);
+    let adj = (excl)?0:1;
+    let newVal = value.replace(/[Ii]nf$/, 'Infinity');
+    let range = parseFloat(newVal.substr(adj));
+    return {
+      exclusive: excl,
+      range: range
+    };
+  }
+
+  _parseLexRange(value) {
+    value = value.toString() || '';
+    if (!value.match(/^[\(\[\+\-]/)) { throw new Error(messages.invalidLexRange); }
+    let excl = (value.indexOf('[') !== 0);
+    let nothing = (value.indexOf('-') === 0 && value.length === 1);
+    let everything = (value.indexOf('+') === 0 && value.length === 1);
+    let adj = (excl)?0:1;
+    if (nothing || everything) value = '';
+    value = value.substr(1);
+    return {
+      exclusive: excl,
+      nothing: nothing,
+      everything: everything,
+      range: value
+    };
+  }
+
+  _logReturn(message) {
+    if (this.multiMode) {
+      this.responseMessages.push(message);
+    }
+    return message;
+  }
+
   // ---------------------------------------
   // ## Internal - Key ##
   // ---------------------------------------
@@ -967,6 +2217,7 @@ class MemoryCache extends Event {
   }
 
   _key(key) {
+    this.cache[key].lastAccess = Date.now();
     return this.cache[key];
   }
 
@@ -1079,6 +2330,7 @@ class MemoryCache extends Event {
 
   _setKey(key, value) {
     this.cache[key].value = value;
+    this.cache[key].lastAccess = Date.now();
   }
 }
 
