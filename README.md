@@ -5,13 +5,10 @@
 [![Actual version published on npm](http://img.shields.io/npm/v/@mediaxpost/memory-cache.svg)](https://www.npmjs.org/package/@mediaxpost/memory-cache)
 [![Travis build status](https://travis-ci.org/MediaXPost/memory-cache.svg)](https://www.npmjs.org/package/@mediaxpost/memory-cache)
 [![Total npm module downloads](http://img.shields.io/npm/dt/@mediaxpost/memory-cache.svg)](https://www.npmjs.org/package/@mediaxpost/memory-cache)
-[![Package Quality](http://npm.packagequality.com/badge/@mediaxpost/memory-cache.png)](http://packagequality.com/#?package=@mediaxpost/memory-cache)
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/a6899212e1c746f09de8088a59ae6cfc)](https://www.codacy.com/app/chronosis/memory-cache?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=MediaXPost/memory-cache&amp;utm_campaign=Badge_Grade)
-[![Codacy Coverage Badge](https://api.codacy.com/project/badge/Coverage/a6899212e1c746f09de8088a59ae6cfc)](https://www.codacy.com/app/chronosis/memory-cache?utm_source=github.com&utm_medium=referral&utm_content=MediaXPost/memory-cache&utm_campaign=Badge_Coverage)
 [![Dependencies badge](https://david-dm.org/MediaXPost/memory-cache/status.svg)](https://david-dm.org/MediaXPost/memory-cache?view=list)
 
 
-`memory-cache` is a simple, Redis-like, in-memory cache written in pure Javascript.
+`memory-cache` is a simple, Redis-like, in-memory cache written in pure Javascript.  The API is designed to mirror the node [`redis` module](https://www.npmjs.com/package/redis) and can be used with nearly all redis commands supported by Redis.
 
 # [Installation](#installation)
 <a name="installation"></a>
@@ -24,59 +21,80 @@ npm install @mediaxpost/memory-cache
 <a name="usage"></a>
 
 ```js
-const validationHelper = require('@mediaxpost/memory-cache');
+const MemoryCache = require('@mediaxpost/memory-cache');
+const client = new MemoryCache({ bypassUnsupported: true });
 
-console.log(validationHelper.validate('1.23', 'float'));
-console.log(validationHelper.validate('qwerty', 'float'));
-console.log(validationHelper.validate('qwerty', 'string'));
-console.log(validationHelper.convert('1.23', 'float'));
-console.log(validationHelper.strToBool('yes'));
-console.log(validationHelper.strToBool('True'));
+client.connect();
+client.set("TestKey", 10);
+client.get("TestKey");
 ```
 
 # [API Reference](#api)
 <a name="api"></a>
 
-## validationHelper.validate(value, type [, options]) ⇒ boolean
-Test is the string `value` is of the `type` specified. Additional [Validator.js](https://www.npmjs.com/package/validator) `options` may be passed for added constraints.
-
-| Type | Desc | Options |
-| ---- | ---- | ------- |
-| `'int'`, `'integer'` |  Integer Values | Y |
-| `'float'` | Floating Point Values | Y |
-| `'bool'`, `'boolean'` | Boolean values | N |
-| `'email'`, | Email addresses | Y |
-| `'currency'` | Currency values (*e.g. '1.23', '$30', '€12,73'*) | Y |
-| `'uuid'` | v1, v2, or v4 UUID values | N |
-| `'url'` | Url values (*e.g. 'http://google.com'* ) | Y |
-| `'fqdn'` | Fully-qualified Domain Name (*e.g. 'docs.google.com'*) | Y |
-| `'apikey'` | A [`uuid-apikey`](https://www.npmjs.com/package/uuid-apikey) APIKey value  (e.g. 'ZYXWVTS-9876543-ABCDEFG-1234567') | N |
-| `'string'` | String Values | N |
-| `'any'` | Any possible value | N |
+## constructor(options)
+Create a new MemoryCache client with the passed options. MemoryCache only supports one option `bypassUnsupported` which if set `true` causes any unsupported commands to fail silently instead of throwing an error.
 
 ```js
-validationHelper.validate('1.23', 'float');
+const MemoryCache = require('@mediaxpost/memory-cache');
+const client = new MemoryCache({ bypassUnsupported: true });
 ```
 
-**Output**:
-```
-true
-```
+## MemoryCache.connect()
+Connect to the memory cache and emits the `connect` and `ready` events.
 
-## validationHelper.convert(value, type) ⇒ mixed
-Attempts to convert the provided string `value` to the `type` specified. If the `type` is unknown, then the original `value` is returned.  The `type` can be `int`, `float`, or `bool`. For `int` and `float` values `NaN` is returned if the value can not be converted.
+## MemoryCache.quit()
+Disconnects from the memory cache and emits the `end` event.
 
-```js
-validationHelper.convert('1234', 'int');
-```
+## Redis Commands
+MemoryCache support all but a select few [Redis Commands](https://redis.io/commands) and returns then data as close to identically as possible to the [`redis` module](https://www.npmjs.com/package/redis). Any errors are thrown as exceptions which should be caught.  The commands which are unavailable are as follows:
 
-**Output**:
-```
-1234
-```
+ * CLUSTER
+ * READONLY
+ * READWRITE
+ * MIGRATE
+ * MOVE
+ * OBJECT
+ * SORT
+ * WAIT
+ * BLPOP
+ * BRPOP
+ * BRPOPLPUSH
+ * EVAL
+ * EVALSHA
+ * SCRIPT *
+ * BGREWRITEAOF
+ * CLIENT *
+ * COMMAND *
+ * CONFIG *
+ * DEBUG *
+ * MONITOR
+ * SHUTDOWN
+ * SLAVEOF
+ * SLOWLOG
+ * SYNC
+ * GEOADD
+ * GEODIST
+ * GEOHASH
+ * GEOPOS
+ * GEORADIUS
+ * GEORADIUSBYMEMBER
+ * PFADD
+ * PFCOUNT
+ * PFMERGE
+ * BITFIELD
+ * BITPOS
+ * ZINTERSTORE
+ * ZUNIONSTORE
+ * UNWATCH
+ * WATCH
+ * SCAN
+ * HSCAN
+ * LSCAN
+ * SSCAN
+ * ZSCAN
 
-## validationHelper.strToBool(str) ⇒ boolean
-Converts the string value to a boolean. `true`, `yes`, `1` return a value `true`. All other value return `false`.
+If an unavailable command is issued, then the module throws a "MemoryCache does not support that operation" exception, unless the option `bypassUnsupported` is set to `true` in the constructor.
 
 # [License](#license)
 <a name="license"></a>
