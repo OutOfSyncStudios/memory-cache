@@ -46,7 +46,7 @@ class MemoryCache extends Event {
   createClient() {
     this.connected = true;
     // exit multi mode if we are in it
-    this.discard(true);
+    this.discard(null, true);
     this.emit('connect');
     this.emit('ready');
     return this;
@@ -55,7 +55,7 @@ class MemoryCache extends Event {
   quit() {
     this.connected = false;
     // exit multi mode if we are in it
-    this.discard(true);
+    this.discard(null, true);
     this.emit('end');
     return this;
   }
@@ -90,7 +90,7 @@ class MemoryCache extends Event {
     }
 
     // exit multi mode if we are in it
-    this.discard(true);
+    this.discard(null, true);
 
     // Swap databases
     const temp = this.databases[index1];
@@ -161,77 +161,81 @@ class MemoryCache extends Event {
   // ## Hash ##
   // ---------------------------------------
   hdel(key, ...fields) {
-    let fieldCount = 0;
+    let retVal = 0;
+    const callback = this._retrieveCallback(fields);
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
       for (let itr = 0; itr < fields.length; itr++) {
         const field = fields[itr];
         if (this._hasField(key, field)) {
           delete this.cache[key].value[field];
-          fieldCount++;
+          retVal++;
         }
       }
     }
-    return fieldCount;
+    return this._handleCallback(callback, retVal);
   }
 
-  hexists(key, field) {
+  hexists(key, field, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
       if (this._hasField(key, field)) {
         retVal = 1;
       }
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  hget(key, field) {
+  hget(key, field, callback) {
     let retVal = null;
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
       if (this._hasField(key, field)) {
         retVal = this._getKey(key)[field];
       }
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  hgetall(key) {
+  hgetall(key, callback) {
     let retVals = {};
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
       retVals = this._getKey(key);
     }
-    return retVals;
+    return this._handleCallback(callback, retVals);
   }
 
-  hincrby(key, field, value) {
-    return this._addToField(key, field, value, false);
+  hincrby(key, field, value, callback) {
+    return this._addToField(key, field, value, false, callback);
   }
 
-  hincrbyfloat(key, field, value) {
-    return this._addToField(key, field, value, true);
+  hincrbyfloat(key, field, value, callback) {
+    return this._addToField(key, field, value, true, callback);
   }
 
-  hkeys(key) {
+  hkeys(key, callback) {
     let retVals = [];
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
       retVals = this._getKey(key).keys();
     }
 
-    return retVals;
+    return this._handleCallback(callback, retVals);
   }
 
-  hlen(key) {
-    return this.hkeys(key).length;
+  hlen(key, callback) {
+    const retVal = this.hkeys(key).length;
+    return this._handleCallback(callback, retVal);
   }
 
   hmget(key, ...fields) {
-    const fieldVals = [];
+    const retVals = [];
+    const callback = this._retrieveCallback(fields);
+
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
     }
     for (let itr = 0; itr < fields.length; itr++) {
       const field = fields[itr];
@@ -241,38 +245,34 @@ class MemoryCache extends Event {
           val = this._getField(key, field);
         }
       }
-      fieldVals.push(val);
+      retVals.push(val);
     }
-    return fieldVals;
+    return this._handleCallback(callback, retVals);
   }
 
   hmset(key, ...params) {
-    let callback;
     let objData = [];
+    const callback = this._retrieveCallback(params);
 
     if (params.length < 1) {
-      throw new Error(messages.wrongArgCount.replace('%0', 'hmset'));
-    }
-
-    if (params.length > 0 && typeof params[params.length - 1] === 'function') {
-      callback = params.pop();
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'hmset'));
     }
 
     if (typeof params[0] === 'object') {
       objData = __.flatten(__.toPairs(params.shift()));
       if (params.length > 0) {
-        throw new Error(messages.wrongArgCount.replace('%0', 'hmset'));
+        return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'hmset'));
       }
       params = objData;
     }
 
     // params should have key and field/value pairs and should be even in length
     if (params.legnth % 2 !== 0) {
-      throw new Error(messages.wrongArgCount.replace('%0', 'hmset'));
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'hmset'));
     }
 
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
     } else {
       this.cache[key] = this._makeKey({}, 'hash');
     }
@@ -287,19 +287,19 @@ class MemoryCache extends Event {
     return this._handleCallback(callback, messages.ok);
   }
 
-  hscan(key, cursor, pattern, count) {
+  hscan(key, cursor, pattern, count, callback) {
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
       count = count || 10;
       pattern = pattern || '*';
     }
     this._unsupported();
   }
 
-  hset(key, field, value) {
+  hset(key, field, value, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
     } else {
       this.cache[key] = this._makeKey({}, 'hash');
     }
@@ -311,13 +311,13 @@ class MemoryCache extends Event {
     this._setField(key, field, value);
     this.persist(key);
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  hsetnx(key, field, value) {
+  hsetnx(key, field, value, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
     } else {
       this.cache[key] = this._makeKey({}, 'hash');
     }
@@ -328,25 +328,27 @@ class MemoryCache extends Event {
       retVal = 1;
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  hstrlen(key, field) {
+  hstrlen(key, field, callback) {
+    let retVal = 0;
     const getVal = this.hget(key, field);
     if (__.hasValue(getVal)) {
-      return getVal.length;
+      retVal = getVal.length;
     }
-    return 0;
+
+    return this._handleCallback(callback, retVal);
   }
 
-  hvals(key) {
+  hvals(key, callback) {
     let retVals = [];
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
       retVals = this._getKey(key).values();
     }
 
-    return retVals;
+    return this._handleCallback(callback, retVals);
   }
 
   // -------------------------------------------------
@@ -368,45 +370,52 @@ class MemoryCache extends Event {
   // Keys
   // ---------------------------------------
   del(...keys) {
-    let keyCount = 0;
+    let retVal = 0;
+    const callback = this._retrieveCallback(keys);
+
     for (let itr = 0; itr < keys.length; itr++) {
       const key = keys[itr];
       if (this._hasKey(key)) {
         delete this.cache[key];
-        keyCount++;
+        retVal++;
       }
     }
-    return keyCount;
+
+    return this._handleCallback(callback, retVal);
   }
 
-  dump(key) {
+  dump(key, callback) {
+    let retVal = null;
     if (this._hasKey(key)) {
-      return JSON.stringify(this.cache[key]);
+      retVal = JSON.stringify(this.cache[key]);
     }
-    return null;
+
+    return this._handleCallback(callback, retVal);
   }
 
   exists(...keys) {
-    let existCount = 0;
+    let retVal = 0;
+    const callback = this._retrieveCallback(keys);
+
     for (let itr = 0; itr < keys.length; itr++) {
       const key = keys[itr];
       if (this._hasKey(key)) {
-        existCount++;
+        retVal++;
       }
     }
-    return existCount;
+    return this._handleCallback(callback, retVal);
   }
 
-  expire(key, seconds) {
+  expire(key, seconds, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
       this.cache[key].timeout = Date.now() + parseInt(seconds) * 1000;
       retVal = 1;
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  expireat(key, timestamp) {
+  expireat(key, timestamp, callback) {
     let retVal = 0;
     if (parseInt(timestamp).toString().length <= 11) {
       timestamp = parseInt(timestamp) * 1000;
@@ -415,21 +424,21 @@ class MemoryCache extends Event {
       this.cache[key].timeout = timestamp;
       retVal = 1;
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  keys(pattern) {
-    const keyList = [];
+  keys(pattern, callback) {
+    const retVals = [];
     pattern = pattern || '*';
     const regEx = this._createRegExpGlob(pattern);
     for (const key in this.cache) {
       if (this._hasKey(key)) {
         if (__.hasValue(key.matches(regEx))) {
-          keyList.push(key);
+          retVals.push(key);
         }
       }
     }
-    return keyList;
+    return this._handleCallback(callback, retVals);
   }
 
   migrate(...params) {
@@ -444,7 +453,7 @@ class MemoryCache extends Event {
     this._unsupported();
   }
 
-  persist(key) {
+  persist(key, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
       if (__.hasValue(this._key(key).timeout)) {
@@ -452,23 +461,23 @@ class MemoryCache extends Event {
         retVal = 1;
       }
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  pexpire(key, milliseconds) {
+  pexpire(key, milliseconds, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
       this.cache[key].timeout = Date.now() + parseInt(milliseconds);
       retVal = 1;
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  pexpireat(key, timestamp) {
-    return this.expireat(key, timestamp);
+  pexpireat(key, timestamp, callback) {
+    return this.expireat(key, timestamp, callback);
   }
 
-  pttl(key) {
+  pttl(key, callback) {
     let retVal = -2;
     if (this._hasKey(key)) {
       if (__.hasValue(this.cache[key].timeout)) {
@@ -479,29 +488,29 @@ class MemoryCache extends Event {
         retVal = -1;
       }
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  randomkey() {
-    let keyName = null;
+  randomkey(callback) {
+    let retVal = null;
     const keys = Object.keys(this.cache);
     if (keys.length !== 0) {
       const idx = this._randInt(0, keys.length - 1);
-      keyName = keys[idx];
+      retVal = keys[idx];
     }
-    return keyName;
+    return this._handleCallback(callback, retVal);
   }
 
-  rename(key, newkey) {
+  rename(key, newkey, callback) {
     if (this._hasKey(key)) {
       this.cache[newkey] = Object.assign(this.cache[key]);
       delete this.cache[key];
-      return messages.ok;
+      return this._handleCallback(callback, messages.ok);
     }
-    throw new Error(messages.nokey);
+    return this._handleCallback(callback, null, messages.nokey);
   }
 
-  renamenx(key, newkey) {
+  renamenx(key, newkey, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
       if (!this._hasKey(newkey)) {
@@ -509,31 +518,31 @@ class MemoryCache extends Event {
         delete this.cache[key];
         retVal = 1;
       }
-      return retVal;
+      return this._handleCallback(callback, retVal);
     }
-    throw new Error(messages.nokey);
+    return this._handleCallback(callback, null, messages.nokey);
   }
 
-  restore(key, ttl, value, replace) {
+  restore(key, ttl, value, replace, callback) {
     replace = __.bool(replace);
     ttl = ttl || 0;
     if (this._hasKey(key) && !replace) {
-      throw new Error(messages.busykey);
+      return this._handleCallback(callback, null, messages.busykey);
     }
     let val;
     try {
       val = JSON.parse(value);
     } catch (err) {
-      throw new Error(messages.wrongPayload);
+      return this._handleCallback(callback, null, messages.wrongPayload);
     }
     this.cache[key] = Object.assign(val);
     if (ttl !== 0) {
       this.pexpire(key, ttl);
     }
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
-  scan(cursor, pattern, count) {
+  scan(cursor, pattern, count, callback) {
     count = count || 10;
     pattern = pattern || '*';
     this._unsupported();
@@ -544,30 +553,36 @@ class MemoryCache extends Event {
   }
 
   touch(...keys) {
-    const keyCount = 0;
+    let retVal = 0;
+    const callback = this._retrieveCallback(keys);
+
     for (let itr = 0; itr < keys.length; itr++) {
       const key = keys[itr];
       if (this._hasKey(key)) {
         this.cache[key].lastAccess = Date.now();
+        retVal++;
       }
     }
-    return keyCount;
+
+    return this._handleCallback(callback, retVal);
   }
 
-  ttl(key) {
+  ttl(key, callback) {
     const keyttl = this.pttl(key);
     if (keyttl < 0 && keyttl > -3) {
       return keyttl;
     }
-    return Math.floor(keyttl / 1000);
+    const retVal = Math.floor(keyttl / 1000);
+    return this._handleCallback(callback, retVal);
+
   }
 
-  type(key) {
+  type(key, callback) {
     const keyType = 'none';
     if (this._hasKey(key)) {
       return this.cache[key].type;
     }
-    return keyType;
+    return this._handleCallback(callback, keyType);
   }
 
   unlink(...keys) {
@@ -593,10 +608,10 @@ class MemoryCache extends Event {
     this._unsupported();
   }
 
-  lindex(key, index) {
+  lindex(key, index, callback) {
     let retVal = null;
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
       const length = this._getKey(key).length || 0;
       if (index < 0) {
         index = length + index;
@@ -606,13 +621,13 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  linsert(key, before, pivot, value) {
+  linsert(key, before, pivot, value, callback) {
     const retVal = -1;
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
       const length = this._getKey(key).length || 0;
       if (pivot < length) {
         let add = 0;
@@ -625,35 +640,35 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  llen(key) {
+  llen(key, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
       retVal = this._getKey(key).length || 0;
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  lpop(key) {
+  lpop(key, callback) {
     let retVal = null;
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
       const val = this._getKey(key);
       retVal = val.shift();
       this._setKey(key, val);
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  lpush(key, value) {
+  lpush(key, value, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
     } else {
       this.cache[key] = this._makeKey([], 'list');
     }
@@ -662,26 +677,26 @@ class MemoryCache extends Event {
     val.splice(0, 0, value);
     this._setKey(key, val);
     retVal = val.length;
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  lpushx(key, value) {
+  lpushx(key, value, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
       const val = this._getKey(key);
       val.splice(0, 0, value);
       this._setKey(key, val);
       retVal = val.length;
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  lrange(key, start, stop) {
+  lrange(key, start, stop, callback) {
     const retVal = [];
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
       const val = this._getKey(key);
       const length = val.length;
       if (stop < 0) {
@@ -703,13 +718,13 @@ class MemoryCache extends Event {
         }
       }
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  lrem(key, count, value) {
+  lrem(key, count, value, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
       const val = this._getKey(key);
       const length = val.lenth;
       const dir = count < 0 ? -1 : 1;
@@ -729,32 +744,32 @@ class MemoryCache extends Event {
       this._setKey(key, val);
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  lset(key, index, value) {
+  lset(key, index, value, callback) {
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
       const val = this._getKey(key);
       index = parseInt(index);
       if (isNaN(index)) {
-        throw new Error(messages.noint);
+        return this._handleCallback(callback, null, messages.noint);
       }
       if (index < 0 || index >= val.length) {
-        throw new Error(messages.indexOutOfRange);
+        return this._handleCallback(callback, null, messages.indexOutOfRange);
       }
       val[index] = value;
       this._setKey(key, val);
     } else {
-      throw new Error(messages.nokey);
+      return this._handleCallback(callback, null, messages.nokey);
     }
 
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
-  ltrim(key, start, stop) {
+  ltrim(key, start, stop, callback) {
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
       const val = this._getKey(key);
       const length = val.length;
       if (stop < 0) {
@@ -767,7 +782,7 @@ class MemoryCache extends Event {
         stop = length - 1;
       }
       if (start < 0 || start >= length) {
-        throw new Error(messages.indexOutOfRange);
+        return this._handleCallback(callback, null, messages.indexOutOfRange);
       }
 
       if (stop >= 0 && stop >= start) {
@@ -783,34 +798,34 @@ class MemoryCache extends Event {
       }
     }
 
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
-  rpop(key) {
+  rpop(key, callback) {
     let retVal = null;
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
       const val = this._getKey(key);
       retVal = val.pop();
       this._setKey(key, val);
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  rpoplpush(sourcekey, destkey) {
+  rpoplpush(sourcekey, destkey, callback) {
     const retVal = this.rpop(sourcekey);
     if (retVal !== null) {
       this.lpush(destkey, retVal);
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  rpush(key, value) {
+  rpush(key, value, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
     } else {
       this.cache[key] = this._makeKey([], 'list');
     }
@@ -819,20 +834,20 @@ class MemoryCache extends Event {
     val.push(value);
     this._setKey(key, val);
     retVal = val.length;
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  rpushx(key, value) {
+  rpushx(key, value, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'list', true);
+      this._testType(key, 'list', true, callback);
       const val = this._getKey(key);
       val.push(value);
       this._setKey(key, val);
       retVal = val.length;
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   // ---------------------------------------
@@ -884,9 +899,9 @@ class MemoryCache extends Event {
     this._unsupported();
   }
 
-  bgsave() {
+  bgsave(callback) {
     this.lastSave = Date.now();
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
   client(...params) {
@@ -901,8 +916,9 @@ class MemoryCache extends Event {
     this._unsupported();
   }
 
-  dbsize() {
-    return Object.keys(this.cache).length;
+  dbsize(callback) {
+    const retVal = Object.keys(this.cache).length;
+    return this._handleCallback(callback, retVal);
   }
 
   debug(command, ...params) {
@@ -913,7 +929,7 @@ class MemoryCache extends Event {
     }
   }
 
-  flushall(async) {
+  flushall(async, callback) {
     this.currentDBIndex = 0;
     delete this.cache;
     delete this.databases;
@@ -921,37 +937,38 @@ class MemoryCache extends Event {
     this.databases[this.currentDBIndex] = Object.assign({});
     this.cache = this.databases[this.currentDBIndex];
 
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
-  flushdb() {
+  flushdb(callback) {
     delete this.cache;
     delete this.databases[this.currentDBIndex];
     this.databases[this.currentDBIndex] = Object.assign({});
     this.cache = this.databases[this.currentDBIndex];
 
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
-  info(section) {
-    return '';
+  info(section, callback) {
+    return this._handleCallback(callback, '');
   }
 
-  lastsave() {
-    return this.lastSave;
+  lastsave(callback) {
+    return this._handleCallback(callback, this.lastSave);
   }
 
   monitor() {
     this._unsupported();
   }
 
-  role() {
-    return ['master', 0, null];
+  role(callback) {
+    const retVal = ['master', 0, null];
+    return this._handleCallback(callback, retVal);
   }
 
-  save() {
+  save(callback) {
     this.lastSave = Date.now();
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
   shutdown() {
@@ -970,7 +987,7 @@ class MemoryCache extends Event {
     this._unsupported();
   }
 
-  time() {
+  time(callback) {
     const retVal = [];
     const now = Date.now();
     const rawSeconds = now / 1000;
@@ -979,7 +996,7 @@ class MemoryCache extends Event {
     retVal.push(seconds);
     retVal.push(micro);
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   // ---------------------------------------
@@ -987,8 +1004,9 @@ class MemoryCache extends Event {
   // ---------------------------------------
   sadd(key, ...members) {
     let retVal = 0;
+    const callback = this._retrieveCallback(members);
     if (this._hasKey(key)) {
-      this._testType(key, 'set', true);
+      this._testType(key, 'set', true, callback);
     } else {
       this.cache[key] = this._makeKey([], 'set');
     }
@@ -999,22 +1017,23 @@ class MemoryCache extends Event {
     retVal = newlength - length;
     this._setKey(key, nval);
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  scard(key) {
+  scard(key, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'set', true);
+      this._testType(key, 'set', true, callback);
       retVal = this._getKey(key).length;
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   sdiff(key, ...keys) {
     let retVal = [];
+    const callback = this._retrieveCallback(keys);
     if (this._hasKey(key)) {
-      this._testType(key, 'set', true);
+      this._testType(key, 'set', true, callback);
       retVal = this._getKey(key);
     }
 
@@ -1024,7 +1043,7 @@ class MemoryCache extends Event {
           const diffkey = keys[idx];
           let diffval = [];
           if (this._hasKey(diffkey)) {
-            this._testType(diffkey, 'set', true);
+            this._testType(diffkey, 'set', true, callback);
             diffval = this._getKey(diffkey);
           }
           retVal = __.difference(retVal, diffval);
@@ -1032,19 +1051,21 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   sdiffstore(destkey, key, ...keys) {
+    const callback = this._retrieveCallback(keys);
     const retset = this.sdiff(key, keys);
     this.cache[destkey] = this._makeKey(retset, 'set');
-    return retset.length;
+    return this._handleCallback(callback, retset.length);
   }
 
   sinter(key, ...keys) {
     let retVal = [];
+    const callback = this._retrieveCallback(keys);
     if (this._hasKey(key)) {
-      this._testType(key, 'set', true);
+      this._testType(key, 'set', true, callback);
       retVal = this._getKey(key);
     }
 
@@ -1054,7 +1075,7 @@ class MemoryCache extends Event {
           const diffkey = keys[idx];
           let diffval = [];
           if (this._hasKey(diffkey)) {
-            this._testType(diffkey, 'set', true);
+            this._testType(diffkey, 'set', true, callback);
             diffval = this._getKey(diffkey);
           }
           retVal = __.intersection(retVal, diffval);
@@ -1062,41 +1083,42 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   sinterstore(destkey, key, ...keys) {
+    const callback = this._retrieveCallback(keys);
     const retset = this.sinter(key, keys);
     this.cache[destkey] = this._makeKey(retset, 'set');
-    return retset.length;
+    return this._handleCallback(callback, retset.length);
   }
 
-  sismember(key, member) {
+  sismember(key, member, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'set', true);
+      this._testType(key, 'set', true, callback);
       const val = this._getKey(key);
       if (val.includes(member)) {
         retVal = 1;
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  smembers(key) {
+  smembers(key, callback) {
     let retVal = [];
     if (this._hasKey(key)) {
-      this._testType(key, 'set', true);
+      this._testType(key, 'set', true, callback);
       retVal = this._getKey(key);
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  smove(sourcekey, destkey, member) {
+  smove(sourcekey, destkey, member, callback) {
     let retVal = 0;
     if (this._hasKey(sourcekey)) {
-      this._testType(sourcekey, 'set', true);
+      this._testType(sourcekey, 'set', true, callback);
       const val = this._getKey(sourcekey);
       const idx = val.findIndex(member);
       if (idx !== -1) {
@@ -1105,19 +1127,19 @@ class MemoryCache extends Event {
         retVal = 1;
       }
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  spop(key, count) {
+  spop(key, count, callback) {
     const retVal = [];
     count = count || 1;
     count = parseInt(count);
     if (isNaN(count)) {
-      throw new Error(messages.noint);
+      return this._handleCallback(callback, null, messages.noint);
     }
 
     if (this._hasKey(key)) {
-      this._testType(key, 'set', true);
+      this._testType(key, 'set', true, callback);
       const val = this._getKey(key);
       const length = val.length;
       count = count > length ? length : count;
@@ -1126,16 +1148,16 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  srandmember(key, count) {
+  srandmember(key, count, callback) {
     let retVal = [];
     const nullBehavior = __.hasValue(count);
     count = count || 1;
     count = parseInt(count);
     if (isNaN(count)) {
-      throw new Error(messages.noint);
+      return this._handleCallback(callback, null, messages.noint);
     }
 
     const uniqueBehavior = count >= 0;
@@ -1144,7 +1166,7 @@ class MemoryCache extends Event {
     }
 
     if (this._hasKey(key)) {
-      this._testType(key, 'set', true);
+      this._testType(key, 'set', true, callback);
       const val = this._getKey(key);
       if (uniqueBehavior) {
         retVal = __.sampleSize(val, count);
@@ -1157,13 +1179,14 @@ class MemoryCache extends Event {
       retVal = null;
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   srem(key, ...members) {
     let retVal = 0;
+    const callback = this._retrieveCallback(members);
     if (this._hasKey(key)) {
-      this._testType(key, 'set', true);
+      this._testType(key, 'set', true, callback);
       const val = this._getKey(key);
       for (const index in members) {
         if (members.hasOwnProperty(index)) {
@@ -1177,7 +1200,7 @@ class MemoryCache extends Event {
       }
       this._setKey(key, val);
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   sscan(...params) {
@@ -1186,8 +1209,9 @@ class MemoryCache extends Event {
 
   sunion(key, ...keys) {
     let retVal = [];
+    const callback = this._retrieveCallback(keys);
     if (this._hasKey(key)) {
-      this._testType(key, 'set', true);
+      this._testType(key, 'set', true, callback);
       retVal = this._getKey(key);
     }
 
@@ -1197,7 +1221,7 @@ class MemoryCache extends Event {
           const diffkey = keys[idx];
           let diffval = [];
           if (this._hasKey(diffkey)) {
-            this._testType(diffkey, 'set', true);
+            this._testType(diffkey, 'set', true, callback);
             diffval = this._getKey(diffkey);
           }
           retVal = __.union(retVal, diffval);
@@ -1205,13 +1229,14 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   sunionstore(destkey, key, ...keys) {
+    const callback = this._retrieveCallback(keys);
     const retset = this.sunion(key, keys);
     this.cache[destkey] = this._makeKey(retset, 'set');
-    return retset.length;
+    return this._handleCallback(callback, retset.length);
   }
 
   // ---------------------------------------
@@ -1223,6 +1248,8 @@ class MemoryCache extends Event {
     let onlyexists = false;
     let change = false;
     let increment = false;
+
+    const callback = this._retrieveCallback(params);
 
     // Look for the start of score parameters
     let index = 0;
@@ -1236,7 +1263,7 @@ class MemoryCache extends Event {
     }
 
     if (foundIndex === -1) {
-      throw new Error(messages.wrongArgCount.replace('%0', 'zadd'));
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'zadd'));
     }
 
     let modifiers = [];
@@ -1246,7 +1273,7 @@ class MemoryCache extends Event {
     const members = params.slice(foundIndex);
 
     if (members.length % 2 !== 0) {
-      throw new Error(messages.wrongArgCount.replace('%0', 'zadd'));
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'zadd'));
     }
     const memObj = {};
     for (let itr = 0, end = members.length; itr < end; itr += 2) {
@@ -1275,13 +1302,13 @@ class MemoryCache extends Event {
           break;
         }
         default: {
-          throw new Error(messages.syntax);
+          return this._handleCallback(callback, null, messages.syntax);
         }
       }
     }
 
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
     } else {
       this.cache[key] = this._makeKey({}, 'zset');
     }
@@ -1291,7 +1318,7 @@ class MemoryCache extends Event {
     let updates = [];
 
     if (notexists && onlyexists) {
-      throw new Error(messages.mutuallyExclusiveNXXX);
+      return this._handleCallback(callback, null, messages.mutuallyExclusiveNXXX);
     } else if (onlyexists) {
       updates = __.intersection(__.keys(val), __.keys(memObj));
     } else if (notexists) {
@@ -1317,30 +1344,30 @@ class MemoryCache extends Event {
 
     this._setKey(key, val);
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  zcard(key) {
+  zcard(key, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
       retVal = __.size(val);
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  zcount(key, min, max) {
+  zcount(key, min, max, callback) {
     let retVal = 0;
     const mn = this._parseRange(min);
     const mx = this._parseRange(max);
     if (isNaN(mn.range) || isNaN(mx.range)) {
-      throw new Error(messages.nofloat);
+      return this._handleCallback(callback, null, messages.nofloat);
     }
 
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
       let top, bottom, memval;
       for (const memberIndex in val) {
@@ -1355,17 +1382,17 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  zincrby(key, increment, member) {
+  zincrby(key, increment, member, callback) {
     const incr = parseFloat(increment);
     if (isNaN(incr) || __.isUnset(incr)) {
-      throw new Error(messages.nofloat);
+      return this._handleCallback(callback, null, messages.nofloat);
     }
 
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
     } else {
       this.cache[key] = this._makeKey({}, 'zset');
     }
@@ -1380,20 +1407,20 @@ class MemoryCache extends Event {
     value += incr;
     this._setField(key, member, value);
 
-    return value;
+    return this._handleCallback(callback, value);
   }
 
   zinterstore(...params) {
     this.unsupported();
   }
 
-  zlexcount(key, min, max) {
+  zlexcount(key, min, max, callback) {
     let retVal = 0;
-    const mn = this._parseLexRange(min);
-    const mx = this._parseLexRange(max);
+    const mn = this._parseLexRange(min, callback);
+    const mx = this._parseLexRange(max, callback);
 
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
       let top, bottom, memval;
       for (const memberIndex in val) {
@@ -1426,15 +1453,15 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  zrange(key, start, stop, withscores) {
+  zrange(key, start, stop, withscores, callback) {
     const retVal = [];
     withscores = withscores || false;
 
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
       const length = __.size(val);
       if (stop < 0) {
@@ -1462,22 +1489,25 @@ class MemoryCache extends Event {
         }
       }
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   zrangebylex(key, min, max, ...params) {
     let retVal = [];
-    const mn = this._parseLexRange(min);
-    const mx = this._parseLexRange(max);
     let limit = false;
     let offset;
     let count;
+
+    const callback = this._retrieveCallback(params);
+
+    const mn = this._parseLexRange(min, callback);
+    const mx = this._parseLexRange(max, callback);
 
     // Handle parameters
     if (params.length > 0) {
       limit = true;
       if (params.length < 2) {
-        throw new Error(messages.syntax);
+        return this._handleCallback(callback, null, messages.syntax);
       }
 
       if (params[0].toString().toLowerCase() === 'limit') {
@@ -1489,12 +1519,12 @@ class MemoryCache extends Event {
       }
 
       if (isNaN(offset) || isNaN(count)) {
-        throw new Error(messages.noint);
+        return this._handleCallback(callback, null, messages.noint);
       }
     }
 
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
       const sorted = __.sortBy(
         __.sortBy(__.toPairs(val), (ob) => {
@@ -1543,22 +1573,25 @@ class MemoryCache extends Event {
       retVal = temp;
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   zrangebyscore(key, min, max, ...params) {
     let retVal = [];
-    const mn = this._parseRange(min);
-    const mx = this._parseRange(max);
     let withscores = false;
     let limit = false;
     let offset;
     let count;
 
+    const callback = this._retrieveCallback(params);
+
+    const mn = this._parseRange(min);
+    const mx = this._parseRange(max);
+
     // Handle parameters
     if (params.length > 0) {
       if (params.length > 4) {
-        throw new Error(messages.syntax);
+        return this._handleCallback(callback, null, messages.syntax);
       }
       let itr = 0;
       while (itr < params.length) {
@@ -1572,20 +1605,20 @@ class MemoryCache extends Event {
           count = params.shift();
           itr++;
           if (itr < params.length) {
-            throw new Error(messages.wrongArgCount.replace('%0', 'zrangebyscore'));
+            return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'zrangebyscore'));
           }
         }
         itr++;
       }
 
       if (limit && (isNaN(offset) || isNaN(count))) {
-        throw new Error(messages.noint);
+        return this._handleCallback(callback, null, messages.noint);
       }
     }
 
     const temp = [];
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
       const sorted = __.sortBy(__.toPairs(val), (ob) => {
         return ob[1];
@@ -1616,14 +1649,14 @@ class MemoryCache extends Event {
       retVal = __.keys(__.fromPairs(temp));
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  zrank(key, member) {
+  zrank(key, member, callback) {
     let retVal = null;
 
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
       if (this._hasField(key, member)) {
         const sorted = __.sortBy(__.toPairs(val), (ob) => {
@@ -1643,14 +1676,16 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   zrem(key, ...members) {
     let retVal = 0;
 
+    const callback = this._retrieveCallback(members);
+
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       for (let idx = 0; idx < members.legnth; idx++) {
         const member = members[idx];
         if (this._hasField(key, member)) {
@@ -1660,42 +1695,42 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  zremrangebylex(key, min, max) {
+  zremrangebylex(key, min, max, callback) {
     let retVal = 0;
     let removeKeys = [];
     removeKeys = this.zrangebylex(key, min, max);
     retVal = this.zrem(key, removeKeys);
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  zremrangebyrank(key, start, stop) {
+  zremrangebyrank(key, start, stop, callback) {
     let retVal = 0;
     let removeKeys = [];
     removeKeys = this.zrange(key, start, stop);
     retVal = this.zrem(key, removeKeys);
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  zremrangebyscore(key, min, max) {
+  zremrangebyscore(key, min, max, callback) {
     let retVal = 0;
     let removeKeys = [];
     removeKeys = this.zrangebyscore(key, min, max);
     retVal = this.zrem(key, removeKeys);
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  zrevrange(key, start, stop, withscores) {
+  zrevrange(key, start, stop, withscores, callback) {
     const retVal = [];
     withscores = withscores || false;
 
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
       const length = __.size(val);
       if (stop < 0) {
@@ -1723,22 +1758,25 @@ class MemoryCache extends Event {
         }
       }
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   zrevrangebylex(key, min, max, ...params) {
     let retVal = [];
-    const mn = this._parseLexRange(min);
-    const mx = this._parseLexRange(max);
     let limit = false;
     let offset;
     let count;
+
+    const callback = this._retrieveCallback(params);
+
+    const mn = this._parseLexRange(min, callback);
+    const mx = this._parseLexRange(max, callback);
 
     // Handle parameters
     if (params.length > 0) {
       limit = true;
       if (params.length < 2) {
-        throw new Error(messages.syntax);
+        return this._handleCallback(callback, null, messages.syntax);
       }
 
       if (params[0].toString().toLowerCase() === 'limit') {
@@ -1750,12 +1788,12 @@ class MemoryCache extends Event {
       }
 
       if (isNaN(offset) || isNaN(count)) {
-        throw new Error(messages.noint);
+        return this._handleCallback(callback, null, messages.noint);
       }
     }
 
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
       const sorted = __.reverse(__.sortBy(
         __.sortBy(__.toPairs(val), (ob) => {
@@ -1804,22 +1842,25 @@ class MemoryCache extends Event {
       retVal = temp;
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   zrevrangebyscore(key, min, max, ...params) {
     let retVal = [];
-    const mn = this._parseRange(min);
-    const mx = this._parseRange(max);
     let withscores = false;
     let limit = false;
     let offset;
     let count;
 
+    const callback = this._retrieveCallback(params);
+
+    const mn = this._parseRange(min);
+    const mx = this._parseRange(max);
+
     // Handle parameters
     if (params.length > 0) {
       if (params.length > 4) {
-        throw new Error(messages.syntax);
+        return this._handleCallback(callback, null, messages.syntax);
       }
       let itr = 0;
       while (itr < params.length) {
@@ -1833,20 +1874,20 @@ class MemoryCache extends Event {
           count = params.shift();
           itr++;
           if (itr < params.length) {
-            throw new Error(messages.wrongArgCount.replace('%0', 'zrangebyscore'));
+            return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'zrangebyscore'));
           }
         }
         itr++;
       }
 
       if (limit && (isNaN(offset) || isNaN(count))) {
-        throw new Error(messages.noint);
+        return this._handleCallback(callback, null, messages.noint);
       }
     }
 
     const temp = [];
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
       const sorted = __.reverse(__.sortBy(__.toPairs(val), (ob) => {
         return ob[1];
@@ -1877,14 +1918,14 @@ class MemoryCache extends Event {
       retVal = __.keys(__.fromPairs(temp));
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  zrevrank(key, member) {
+  zrevrank(key, member, callback) {
     let retVal = null;
 
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
       if (this._hasField(key, member)) {
         const sorted = __.reverse(__.sortBy(__.toPairs(val), (ob) => {
@@ -1904,20 +1945,20 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  zscore(key, member) {
+  zscore(key, member, callback) {
     let retVal = null;
 
     if (this._hasKey(key)) {
-      this._testType(key, 'zset', true);
+      this._testType(key, 'zset', true, callback);
       if (this._hasField(key, member)) {
         retVal = this._getField(key, member);
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
   zunionstore(...params) {
@@ -1931,25 +1972,28 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // ## String Oprations ##
   // ---------------------------------------
-  append(key, value) {
+  append(key, value, callback) {
     const retValue = value.length || 0;
     let keyValue = '';
     if (this._hasKey(key)) {
-      this._testType(key, 'string', true);
+      this._testType(key, 'string', true, callback);
       keyValue = this._getKey(key);
     } else {
       this.cache[key] = this._makeKey('', 'string');
     }
     this._setKey(key, `${keyValue}${value}`);
-    return retValue;
+    return this._handleCallback(callback, retValue);
   }
 
   // TODO: process start / end for bitcount
-  bitcount(key, start, end) {
+  bitcount(key, ...params) { // start, end, callback) {
     let retValue = 0;
     let keyValue = '';
+
+    const callback = this._retrieveCallback(params);
+
     if (this._hasKey(key)) {
-      this._testType(key, 'string', true);
+      this._testType(key, 'string', true, callback);
       keyValue = this._getKey(key);
     }
     for (let itr = 0; itr < keyValue.length; itr++) {
@@ -1959,7 +2003,7 @@ class MemoryCache extends Event {
         val >>= 1;
       }
     }
-    return retValue;
+    return this._handleCallback(callback, retValue);
   }
 
   bitfield(...params) {
@@ -1969,8 +2013,11 @@ class MemoryCache extends Event {
   bitop(operation, destkey, ...srckeys) {
     let retVal = 0;
     let setVal = null;
+
+    const callback = this._retrieveCallback(srckeys);
+
     if (srckeys.length < 1) {
-      throw new Error(messages.wrongArgCount.replace('%0', 'bitop'));
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'bitop'));
     }
     operation = operation.toLowerCase();
     const keys = this.mget(srckeys);
@@ -1984,47 +2031,47 @@ class MemoryCache extends Event {
         break;
       case 'not':
         if (srckeys.legnth > 1) {
-          throw new Error(messages.bitopnotWrongCount);
+          return this._handleCallback(callback, null, messages.bitopnotWrongCount);
         }
         setVal = this._strnot(keys[0]);
         retVal = setVal.length;
         break;
       default:
-        throw new Error(messages.syntax);
+        return this._handleCallback(callback, null, messages.syntax);
     }
 
     this.set(destkey, setVal);
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  bitpos(key, bit, start, end) {
+  bitpos(key, bit, start, end, callback) {
     this._unsupported();
   }
 
-  decr(key) {
-    return this._addToKey(key, -1);
+  decr(key, callback) {
+    return this._addToKey(key, -1, callback);
   }
 
-  decrby(key, amount) {
-    return this._addToKey(key, -amount);
+  decrby(key, amount, callback) {
+    return this._addToKey(key, -amount, callback);
   }
 
-  get(key) {
+  get(key, callback) {
     let retVal = null;
     if (this._hasKey(key)) {
-      this._testType(key, 'string', true);
+      this._testType(key, 'string', true, callback);
       retVal = this._getKey(key);
     }
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  getbit(key, offset) {
+  getbit(key, offset, callback) {
     let retVal = 0;
     const byteoffset = Math.floor(offset / 16);
     const keyValue = this.get(key) || '';
     let bitoffset = offset % 16;
     if (byteoffset > keyValue.length) {
-      return retVal;
+      return this._handleCallback(callback, retVal);
     }
     let val = keyValue.charCodeAt(byteoffset);
     while (bitoffset > 0) {
@@ -2032,48 +2079,49 @@ class MemoryCache extends Event {
       bitoffset--;
     }
     retVal = val & 1;
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  getrange(key, start, end) {
+  getrange(key, start, end, callback) {
     const len = end - start + 1;
     const val = this.get(key);
     const retVal = val.substr(start, len);
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  getset(key, value) {
+  getset(key, value, callback) {
     const retVal = this.get(key);
     this.set(key, value);
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  incr(key) {
-    return this._addToKey(key, 1);
+  incr(key, callback) {
+    return this._addToKey(key, 1, callback);
   }
 
-  incrby(key, amount) {
-    return this._addToKey(key, amount);
+  incrby(key, amount, callback) {
+    return this._addToKey(key, amount, callback);
   }
 
-  incrbyfloat(key, amount) {
+  incrbyfloat(key, amount, callback) {
     let keyValue = '0.0';
     if (this._hasKey(key)) {
-      this._testType(key, 'string', true);
+      this._testType(key, 'string', true, callback);
       keyValue = parseFloat(this._getKey(key));
       if (isNaN(keyValue) || __.isUnset(keyValue)) {
-        throw new Error(messages.nofloat);
+        return this._handleCallback(callback, null, messages.nofloat);
       }
     } else {
       this.cache[key] = this._makeKey('0.0', 'string');
     }
     const val = keyValue + amount;
     this._setKey(key, val.toString());
-    return val;
+    return this._handleCallback(callback, val);
   }
 
   mget(...keys) {
-    const keyVals = [];
+    const retVals = [];
+    const callback = this._retrieveCallback(keys);
     for (let itr = 0; itr < keys.length; itr++) {
       const key = keys[itr];
       let val = null;
@@ -2082,15 +2130,17 @@ class MemoryCache extends Event {
           val = this._getKey(key);
         }
       }
-      keyVals.push(val);
+      retVals.push(val);
     }
-    return keyVals;
+    return this._handleCallback(callback, retVals);
   }
 
   mset(...params) {
+    const callback = this._retrieveCallback(params);
+
     // params should have key and value pairs and should be even in length
     if (params.legnth % 2 !== 0) {
-      throw new Error(messages.wrongArgCount.replace('%0', 'mset'));
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'mset'));
     }
     const pairs = params.length / 2;
     for (let itr = 0; itr < pairs; itr++) {
@@ -2098,15 +2148,16 @@ class MemoryCache extends Event {
       const value = params[itr * 2 + 1];
       this.cache[key] = this._makeKey(value, 'string');
     }
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
   msetnx(...params) {
     let retVal = 0;
+    const callback = this._retrieveCallback(params);
 
     // params should have key and value pairs and should be even in length
     if (params.legnth % 2 !== 0) {
-      throw new Error(messages.wrongArgCount.replace('%0', 'msetnx'));
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'msetnx'));
     }
     const pairs = params.length / 2;
     for (let itr = 0; itr < pairs; itr++) {
@@ -2119,33 +2170,33 @@ class MemoryCache extends Event {
       }
     }
 
-    return retVal;
+    return this._handleCallback(callback, retVal);
   }
 
-  psetex(key, pttl, value) {
-    return this.set(key, value, null, pttl, null, true);
+  psetex(key, pttl, value, callback) {
+    return this.set(key, value, null, pttl, null, true, callback);
   }
 
-  set(key, value, ttl, pttl, notexist, onlyexist) {
+  set(key, value, ttl, pttl, notexist, onlyexist, callback) {
     const retVal = null;
     pttl = pttl || ttl * 1000 || null;
     if (__.hasValue(ttl) && __.hasValue(pttl)) {
-      throw new Error(messages.syntax);
+      return this._handleCallback(callback, null, messages.syntax);
     }
     if (this._hasKey(key)) {
-      this._testType(key, 'string', true);
+      this._testType(key, 'string', true, callback);
       if (notexist) {
-        return retVal;
+        return this._handleCallback(callback, retVal);
       }
     } else if (onlyexist) {
-      return retVal;
+      return this._handleCallback(callback, retVal);
     }
     this.cache[key] = this._makeKey(value, 'string', pttl);
 
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
-  setbit(key, offset, value) {
+  setbit(key, offset, value, callback) {
     value &= 1;
     const byteoffset = Math.floor(offset / 16);
     const bitoffset = offset % 16;
@@ -2167,6 +2218,8 @@ class MemoryCache extends Event {
     }
 
     let code = getVal.charCodeAt(byteoffset);
+    const retVal = ((code & bitmask) > 0) ? 1 : 0;
+
     if (value === 0) {
       // Clear the specified bit
       code &= ~bitmask;
@@ -2177,17 +2230,18 @@ class MemoryCache extends Event {
     getVal[byteoffset] = Buffer.from([code]).toString();
 
     this.set(key, getVal);
+    return this._handleCallback(callback, retVal);
   }
 
-  setex(key, ttl, value) {
-    return this.set(key, value, ttl, null, null, true);
+  setex(key, ttl, value, callback) {
+    return this.set(key, value, ttl, null, null, true, callback);
   }
 
-  setnx(key, value) {
-    return this.set(key, value, null, null, true);
+  setnx(key, value, callback) {
+    return this.set(key, value, null, null, true, false, callback);
   }
 
-  setrange(key, offset, value) {
+  setrange(key, offset, value, callback) {
     let beginning = '';
     let end = '';
     const getVal = this.get(key);
@@ -2201,15 +2255,17 @@ class MemoryCache extends Event {
     }
     const retVal = `${beginning}${value}${end}`;
     this.set(key, retVal);
-    return retVal.length;
+    return this._handleCallback(callback, retVal.length);
   }
 
-  strlen(key) {
+  strlen(key, callback) {
+    let retVal = 0;
     const getVal = this.get(key);
     if (__.hasValue(getVal)) {
-      return getVal.length;
+      retVal = getVal.length;
     }
-    return 0;
+
+    return this._handleCallback(callback, retVal);
   }
 
   // ---------------------------------------
@@ -2219,7 +2275,7 @@ class MemoryCache extends Event {
   // https://redis.io/topics/transactions
   // This can be accomplished by temporarily swapping this.cache to a temporary copy of the current statement
   // holding and then using __.merge on actual this.cache with the temp storage.
-  discard(silent) {
+  discard(callback, silent) {
     // Clear the queue mode, drain the queue, empty the watch list
     if (this.multiMode) {
       this.cache = this.databases[this.currentDBIndex];
@@ -2227,15 +2283,15 @@ class MemoryCache extends Event {
       this.multiMode = false;
       this.responseMessages = [];
     } else if (!silent) {
-      throw new Error(messages.nomulti);
+      return this._handleCallback(callback, null, messages.nomulti);
     }
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
-  exec() {
+  exec(callback) {
     // Run the queue and clear queue mode
     if (!this.multiMode) {
-      throw new Error(messages.nomulti);
+      return this._handleCallback(callback, null, messages.nomulti);
     }
     this.multiMode = false;
     this.databases[this.currentDBIndex] = Object.assign(this.tempCache);
@@ -2243,16 +2299,16 @@ class MemoryCache extends Event {
     const tempMessages = this.responseMessages;
     tempMessages.push(messages.ok);
     this.responseMessages = [];
-    return tempMessages;
+    return this._handleCallback(callback, tempMessages);
   }
 
-  multi() {
+  multi(callback) {
     // Set Queue mode active
     this.multiMode = true;
     this.tempCache = Object.assign(this.cache);
     this.cache = this.tempCache;
 
-    return messages.ok;
+    return this._handleCallback(callback, messages.ok);
   }
 
   unwatch() {
@@ -2270,9 +2326,9 @@ class MemoryCache extends Event {
   // ---------------------------------------
   _unsupported() {
     if (this.option.bypassUnsupported) {
-      return;
+      return undefined;
     }
-    throw new Error(messages.unsupported);
+    return this._handleCallback(null, null, messages.unsupported);
   }
 
   _createRegExpGlob(pattern) {
@@ -2289,11 +2345,11 @@ class MemoryCache extends Event {
     return Math.round(Math.random() * (max - min)) + min;
   }
 
-  _testType(key, type, throwError) {
+  _testType(key, type, throwError, callback) {
     throwError = throwError || false;
     if (this.type(key) !== type) {
       if (throwError) {
-        throw new Error(messages.wrongTypeOp);
+        return this._handleCallback(callback, null, messages.wrongTypeOp);
       }
       return false;
     }
@@ -2309,10 +2365,10 @@ class MemoryCache extends Event {
     return { exclusive: excl, range: range };
   }
 
-  _parseLexRange(value) {
+  _parseLexRange(value, callback) {
     value = value.toString() || '';
     if (!value.match(/^[([+-]/)) {
-      throw new Error(messages.invalidLexRange);
+      return this._handleCallback(callback, null, messages.invalidLexRange);
     }
     const excl = value.indexOf('[') !== 0;
     const nothing = value.indexOf('-') === 0 && value.length === 1;
@@ -2345,6 +2401,13 @@ class MemoryCache extends Event {
     return message;
   }
 
+  _retrieveCallback(params) {
+    if (Array.isArray(params) && params.length > 0 && typeof params[params.length - 1] === 'function') {
+      return params.pop();
+    }
+    return undefined;
+  }
+
   // ---------------------------------------
   // ## Internal - Key ##
   // ---------------------------------------
@@ -2364,18 +2427,18 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // ## Internal - Hash ##
   // ---------------------------------------
-  _addToField(key, field, amount, useFloat) {
+  _addToField(key, field, amount, useFloat, callback) {
     useFloat = useFloat || false;
     let fieldValue = useFloat ? '0.0' : '0';
     if (this._hasKey(key)) {
-      this._testType(key, 'hash', true);
+      this._testType(key, 'hash', true, callback);
       let value = 0;
       if (this._hasField(key, field)) {
         value = this._getField(key, field);
       }
       fieldValue = useFloat ? parseFloat(value) : parseInt(value);
       if (isNaN(fieldValue) || __.isUnset(fieldValue)) {
-        throw new Error(useFloat ? messages.nofloat : messages.noint);
+        return this._handleCallback(callback, null, useFloat ? messages.nofloat : messages.noint);
       }
     } else {
       this.cache[key] = this._makeKey({}, 'hash');
@@ -2401,13 +2464,13 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // ## Internal - String ##
   // ---------------------------------------
-  _addToKey(key, amount) {
+  _addToKey(key, amount, callback) {
     let keyValue = '0';
     if (this._hasKey(key)) {
-      this._testType(key, 'string', true);
+      this._testType(key, 'string', true, callback);
       keyValue = parseInt(this._getKey(key));
       if (isNaN(keyValue) || __.isUnset(keyValue)) {
-        throw new Error(messages.noint);
+        return this._handleCallback(callback, null, messages.noint);
       }
     } else {
       this.cache[key] = this._makeKey('0', 'string');

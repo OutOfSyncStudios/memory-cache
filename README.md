@@ -72,7 +72,6 @@ MemoryCache support all but a select few [Redis Commands](https://redis.io/comma
 * GEORADIUS
 * GEORADIUSBYMEMBER
 * HSCAN
-* LSCAN
 * MIGRATE
 * MONITOR
 * MOVE
