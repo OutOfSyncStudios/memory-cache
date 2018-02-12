@@ -27,7 +27,7 @@
   },
   "homepage": "https://github.com/MediaXPost/memory-cache#readme",
   "dependencies": {
-    "@mediaxpost/lodashext": "^1.0.0",
+    "@mediaxpost/lodashext": "^1.1.0",
     "bluebird": "^3.5.1"
   },
   "devDependencies": {
@@ -38,6 +38,7 @@
     "gulp-eslint": "^4.0.1",
     "gulp-mocha": "^5.0.0",
     "gulp-prettier": "^1.1.0",
+    "lolex": "^2.3.2",
     "mocha": "^5.0.0",
     "nyc": "^11.4.1",
     "prettier": "^1.10.2"

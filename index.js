@@ -27,6 +27,12 @@ const messages = {
   mutuallyExclusiveNXXX: 'ERR XX and NX options at the same time are not compatible'
 };
 
+class MemoryCacheError extends Error {
+  constructor(error) {
+    super(error);
+  }
+}
+
 class MemoryCache extends Event {
   constructor(options) {
     super();
@@ -208,18 +214,20 @@ class MemoryCache extends Event {
   }
 
   hincrby(key, field, value, callback) {
-    return this._addToField(key, field, value, false, callback);
+    let retVal = this._addToField(key, field, value, false, callback);
+    return this._handleCallback(callback, retVal);
   }
 
   hincrbyfloat(key, field, value, callback) {
-    return this._addToField(key, field, value, true, callback);
+    let retVal = this._addToField(key, field, value, true, callback);
+    return this._handleCallback(callback, retVal);
   }
 
   hkeys(key, callback) {
     let retVals = [];
     if (this._hasKey(key)) {
       this._testType(key, 'hash', true, callback);
-      retVals = this._getKey(key).keys();
+      retVals = Object.keys(this._getKey(key));
     }
 
     return this._handleCallback(callback, retVals);
@@ -253,7 +261,6 @@ class MemoryCache extends Event {
   hmset(key, ...params) {
     let objData = [];
     const callback = this._retrieveCallback(params);
-
     if (params.length < 1) {
       return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'hmset'));
     }
@@ -265,9 +272,9 @@ class MemoryCache extends Event {
       }
       params = objData;
     }
-
+    const parity = params.length % 2;
     // params should have key and field/value pairs and should be even in length
-    if (params.legnth % 2 !== 0) {
+    if (parity === 1) {
       return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'hmset'));
     }
 
@@ -308,7 +315,7 @@ class MemoryCache extends Event {
       retVal = 1;
     }
 
-    this._setField(key, field, value);
+    this._setField(key, field, value.toString());
     this.persist(key);
 
     return this._handleCallback(callback, retVal);
@@ -323,7 +330,7 @@ class MemoryCache extends Event {
     }
 
     if (!this._hasField(key, field)) {
-      this._setField(key, field, value);
+      this._setField(key, field, value.toString());
       this.persist(key);
       retVal = 1;
     }
@@ -345,7 +352,7 @@ class MemoryCache extends Event {
     let retVals = [];
     if (this._hasKey(key)) {
       this._testType(key, 'hash', true, callback);
-      retVals = this._getKey(key).values();
+      retVals = Object.values(this._getKey(key));
     }
 
     return this._handleCallback(callback, retVals);
@@ -372,6 +379,8 @@ class MemoryCache extends Event {
   del(...keys) {
     let retVal = 0;
     const callback = this._retrieveCallback(keys);
+    // Flatten the array in case an array was passed
+    keys = __.flatten(keys);
 
     for (let itr = 0; itr < keys.length; itr++) {
       const key = keys[itr];
@@ -417,9 +426,7 @@ class MemoryCache extends Event {
 
   expireat(key, timestamp, callback) {
     let retVal = 0;
-    if (parseInt(timestamp).toString().length <= 11) {
-      timestamp = parseInt(timestamp) * 1000;
-    }
+    timestamp = parseInt(timestamp) * 1000;
     if (this._hasKey(key)) {
       this.cache[key].timeout = timestamp;
       retVal = 1;
@@ -433,7 +440,7 @@ class MemoryCache extends Event {
     const regEx = this._createRegExpGlob(pattern);
     for (const key in this.cache) {
       if (this._hasKey(key)) {
-        if (__.hasValue(key.matches(regEx))) {
+        if (__.hasValue(key.match(regEx))) {
           retVals.push(key);
         }
       }
@@ -445,8 +452,29 @@ class MemoryCache extends Event {
     this._unsupported();
   }
 
-  move(key, db) {
-    this._unsupported();
+  move(key, dbIndex, callback) {
+    let retVal = 0;
+    // Move a key to the specified dbindex.
+    // If the database does not exist then it is created
+    const index = parseInt(dbIndex);
+    if (isNaN(index)) {
+      return this._handleCallback(callback, null, messages.invalidDBIndex);
+    }
+    if (!this.databases.hasOwnProperty(index)) {
+      this.databases[index] = Object.create({});
+    }
+
+    // exit multi mode if we are in it
+    this.discard(null, true);
+
+    if (!this.databases[index].hasOwnProperty(key) && this._hasKey(key)) {
+      let temp = Object.assign(this.cache[key]);
+      delete this.cache[key];
+      this.databases[index][key] = temp;
+      retVal = 1;
+    }
+
+    return this._handleCallback(callback, retVal);
   }
 
   object(subcommand, ...params) {
@@ -474,7 +502,13 @@ class MemoryCache extends Event {
   }
 
   pexpireat(key, timestamp, callback) {
-    return this.expireat(key, timestamp, callback);
+    let retVal = 0;
+    timestamp = parseInt(timestamp);
+    if (this._hasKey(key)) {
+      this.cache[key].timeout = timestamp;
+      retVal = 1;
+    }
+    return this._handleCallback(callback, retVal);
   }
 
   pttl(key, callback) {
@@ -568,25 +602,24 @@ class MemoryCache extends Event {
   }
 
   ttl(key, callback) {
-    const keyttl = this.pttl(key);
-    if (keyttl < 0 && keyttl > -3) {
-      return keyttl;
+    let retVal = this.pttl(key);
+    if (retVal >= 0 || retVal <= -3) {
+      retVal = Math.floor(retVal / 1000);
     }
-    const retVal = Math.floor(keyttl / 1000);
     return this._handleCallback(callback, retVal);
-
   }
 
   type(key, callback) {
-    const keyType = 'none';
+    let keyType = 'none';
     if (this._hasKey(key)) {
-      return this.cache[key].type;
+      keyType =  this.cache[key].type;
     }
     return this._handleCallback(callback, keyType);
   }
 
   unlink(...keys) {
-    return this.del(keys);
+    const callback = this._retrieveCallback(keys);
+    return this._handleCallback(callback, this.del(keys));
   }
 
   wait(numslaves, timeout) {
@@ -625,7 +658,8 @@ class MemoryCache extends Event {
   }
 
   linsert(key, before, pivot, value, callback) {
-    const retVal = -1;
+    let retVal = -1;
+    before = (__.hasValue(before)) ? before : true;
     if (this._hasKey(key)) {
       this._testType(key, 'list', true, callback);
       const length = this._getKey(key).length || 0;
@@ -637,6 +671,7 @@ class MemoryCache extends Event {
         const val = this._getKey(key);
         val.splice(pivot + add, 0, value);
         this._setKey(key, val);
+        retVal = val.length;
       }
     }
 
@@ -1411,7 +1446,7 @@ class MemoryCache extends Event {
   }
 
   zinterstore(...params) {
-    this.unsupported();
+    this._unsupported();
   }
 
   zlexcount(key, min, max, callback) {
@@ -2325,7 +2360,7 @@ class MemoryCache extends Event {
   // ## Internal - Util ##
   // ---------------------------------------
   _unsupported() {
-    if (this.option.bypassUnsupported) {
+    if (this.options.bypassUnsupported) {
       return undefined;
     }
     return this._handleCallback(null, null, messages.unsupported);
@@ -2379,33 +2414,34 @@ class MemoryCache extends Event {
   }
 
   _logReturn(message) {
-    if (__.hasValue(message)) {
+    if (!__.isUndefined(message)) {
       if (this.multiMode) {
         this.responseMessages.push(message);
+        if (message === messages.ok) { message = messags.queue; }
       }
       return message;
     }
-    return undefined;
+    return;
   }
 
   _handleCallback(callback, message, error) {
     const err = this._logReturn(error);
     const msg = this._logReturn(message);
     if (typeof callback === 'function') {
-      callback(err, msg);
-      return undefined;
+      callback(error, msg);
+      return;
     }
     if (err) {
-      throw new Error(err);
+      throw new MemoryCacheError(err);
     }
-    return message;
+    return msg;
   }
 
   _retrieveCallback(params) {
     if (Array.isArray(params) && params.length > 0 && typeof params[params.length - 1] === 'function') {
       return params.pop();
     }
-    return undefined;
+    return;
   }
 
   // ---------------------------------------
@@ -2430,18 +2466,24 @@ class MemoryCache extends Event {
   _addToField(key, field, amount, useFloat, callback) {
     useFloat = useFloat || false;
     let fieldValue = useFloat ? '0.0' : '0';
+    let value = 0;
     if (this._hasKey(key)) {
       this._testType(key, 'hash', true, callback);
-      let value = 0;
       if (this._hasField(key, field)) {
         value = this._getField(key, field);
       }
-      fieldValue = useFloat ? parseFloat(value) : parseInt(value);
-      if (isNaN(fieldValue) || __.isUnset(fieldValue)) {
-        return this._handleCallback(callback, null, useFloat ? messages.nofloat : messages.noint);
-      }
     } else {
       this.cache[key] = this._makeKey({}, 'hash');
+    }
+
+    fieldValue = useFloat ? parseFloat(value) : parseInt(value);
+    amount = useFloat ? parseFloat(amount) : parseInt(amount);
+    if (isNaN(fieldValue) || __.isUnset(fieldValue)) {
+      return this._handleCallback(callback, null, useFloat ? messages.nofloat : messages.noint);
+    }
+
+    if (isNaN(amount) || __.isUnset(amount)) {
+      return this._handleCallback(callback, null, useFloat ? messages.nofloat : messages.noint);
     }
 
     fieldValue += amount;
@@ -2454,7 +2496,14 @@ class MemoryCache extends Event {
   }
 
   _hasField(key, field) {
-    return this._getKey(key).hasOwnProperty(field);
+    let retVal = false;
+    if (key && field) {
+      let ky = this._getKey(key);
+      if (ky) {
+        retVal = ky.hasOwnProperty(field);
+      }
+    }
+    return retVal;
   }
 
   _setField(key, field, value) {
@@ -2524,7 +2573,7 @@ class MemoryCache extends Event {
 
   _getKey(key) {
     const _key = this._key(key) || {};
-    if (_key.timeout && _key.timeout >= Date.now()) {
+    if (_key.timeout && _key.timeout <= Date.now()) {
       this.del(key);
       return null;
     }
@@ -2554,3 +2603,4 @@ for (const idx in keys) {
 }
 
 module.exports = MemoryCache;
+module.exports.MemoryCacheError = MemoryCacheError;
