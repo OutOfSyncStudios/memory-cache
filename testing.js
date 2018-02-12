@@ -3,10 +3,12 @@ const memCache = new MemoryCache();
 
 memCache.createClient();
 
-memCache.hset('test', 'key1', '10');
+memCache.sadd('testkey', 'key');
 
-let val = memCache.hincrby('test', 'key1', '10', (err, res) => {
-  console.log(res);
-});
-
+const val = memCache.smove('testkey', 'destkey', 'key');
 console.log(val);
+// , (err, res) => {
+//   console.log(res);
+// });
+
+// console.log(val);

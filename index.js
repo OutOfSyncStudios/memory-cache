@@ -214,12 +214,12 @@ class MemoryCache extends Event {
   }
 
   hincrby(key, field, value, callback) {
-    let retVal = this._addToField(key, field, value, false, callback);
+    const retVal = this._addToField(key, field, value, false, callback);
     return this._handleCallback(callback, retVal);
   }
 
   hincrbyfloat(key, field, value, callback) {
-    let retVal = this._addToField(key, field, value, true, callback);
+    const retVal = this._addToField(key, field, value, true, callback);
     return this._handleCallback(callback, retVal);
   }
 
@@ -468,7 +468,7 @@ class MemoryCache extends Event {
     this.discard(null, true);
 
     if (!this.databases[index].hasOwnProperty(key) && this._hasKey(key)) {
-      let temp = Object.assign(this.cache[key]);
+      const temp = Object.assign(this.cache[key]);
       delete this.cache[key];
       this.databases[index][key] = temp;
       retVal = 1;
@@ -612,7 +612,7 @@ class MemoryCache extends Event {
   type(key, callback) {
     let keyType = 'none';
     if (this._hasKey(key)) {
-      keyType =  this.cache[key].type;
+      keyType = this.cache[key].type;
     }
     return this._handleCallback(callback, keyType);
   }
@@ -761,18 +761,16 @@ class MemoryCache extends Event {
     if (this._hasKey(key)) {
       this._testType(key, 'list', true, callback);
       const val = this._getKey(key);
-      const length = val.lenth;
-      const dir = count < 0 ? -1 : 1;
+      const dir = (count < 0) ? -1 : 1;
+      let length = val.length;
       count = Math.abs(count);
-      count = count === 0 ? length : count;
-      let pos = dir < 0 ? count : 0;
-      let itr = 0;
-
-      while (itr < count && (pos < length || pos >= 0)) {
+      count = (count === 0) ? length : count;
+      let pos = (dir < 0) ? (length - 1) : 0;
+      while (retVal < count && pos < length && pos >= 0) {
         if (val[pos] === value) {
           val.splice(pos, 1);
           retVal++;
-          itr++;
+          length--;
         }
         pos += dir;
       }
@@ -964,7 +962,8 @@ class MemoryCache extends Event {
     }
   }
 
-  flushall(async, callback) {
+  flushall(...params) {
+    const callback = this._retrieveCallback(params);
     this.currentDBIndex = 0;
     delete this.cache;
     delete this.databases;
@@ -1066,6 +1065,7 @@ class MemoryCache extends Event {
 
   sdiff(key, ...keys) {
     let retVal = [];
+    keys = __.flatten(keys);
     const callback = this._retrieveCallback(keys);
     if (this._hasKey(key)) {
       this._testType(key, 'set', true, callback);
@@ -1098,6 +1098,7 @@ class MemoryCache extends Event {
 
   sinter(key, ...keys) {
     let retVal = [];
+    keys = __.flatten(keys);
     const callback = this._retrieveCallback(keys);
     if (this._hasKey(key)) {
       this._testType(key, 'set', true, callback);
@@ -1155,7 +1156,7 @@ class MemoryCache extends Event {
     if (this._hasKey(sourcekey)) {
       this._testType(sourcekey, 'set', true, callback);
       const val = this._getKey(sourcekey);
-      const idx = val.findIndex(member);
+      const idx = val.indexOf(member);
       if (idx !== -1) {
         this.sadd(destkey, member);
         val.splice(idx, 1);
@@ -1166,7 +1167,7 @@ class MemoryCache extends Event {
   }
 
   spop(key, count, callback) {
-    const retVal = [];
+    let retVal = null;
     count = count || 1;
     count = parseInt(count);
     if (isNaN(count)) {
@@ -1174,6 +1175,7 @@ class MemoryCache extends Event {
     }
 
     if (this._hasKey(key)) {
+      retVal = [];
       this._testType(key, 'set', true, callback);
       const val = this._getKey(key);
       const length = val.length;
@@ -1188,7 +1190,7 @@ class MemoryCache extends Event {
 
   srandmember(key, count, callback) {
     let retVal = [];
-    const nullBehavior = __.hasValue(count);
+    const nullBehavior = __.isUnset(count);
     count = count || 1;
     count = parseInt(count);
     if (isNaN(count)) {
@@ -1226,7 +1228,7 @@ class MemoryCache extends Event {
       for (const index in members) {
         if (members.hasOwnProperty(index)) {
           const member = members[index];
-          const idx = val.findIndex(member);
+          const idx = val.indexOf(member);
           if (idx !== -1) {
             val.splice(idx, 1);
             retVal++;
@@ -2417,7 +2419,7 @@ class MemoryCache extends Event {
     if (!__.isUndefined(message)) {
       if (this.multiMode) {
         this.responseMessages.push(message);
-        if (message === messages.ok) { message = messags.queue; }
+        if (message === messages.ok) { message = messages.queue; }
       }
       return message;
     }
@@ -2498,7 +2500,7 @@ class MemoryCache extends Event {
   _hasField(key, field) {
     let retVal = false;
     if (key && field) {
-      let ky = this._getKey(key);
+      const ky = this._getKey(key);
       if (ky) {
         retVal = ky.hasOwnProperty(field);
       }

@@ -74,7 +74,6 @@ MemoryCache support all but a select few [Redis Commands](https://redis.io/comma
 * HSCAN
 * MIGRATE
 * MONITOR
-* MOVE
 * OBJECT
 * PFADD
 * PFCOUNT
