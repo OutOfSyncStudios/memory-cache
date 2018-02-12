@@ -2018,23 +2018,87 @@ class MemoryCache extends Event {
     } else {
       this.cache[key] = this._makeKey('', 'string');
     }
-    this._setKey(key, `${keyValue}${value}`);
-    return this._handleCallback(callback, retValue);
+    let newValue = `${keyValue}${value}`;
+    this._setKey(key, newValue);
+    return this._handleCallback(callback, newValue.length);
   }
 
-  // TODO: process start / end for bitcount
-  bitcount(key, ...params) { // start, end, callback) {
+  bitcount(key, ...params) {
     let retValue = 0;
     let keyValue = '';
+    let end = -1, start = 0;
 
     const callback = this._retrieveCallback(params);
+    if(params.length > 2 || (params.length > 0 && params.length < 2)) {
+      return this._handleCallback(callback, null, messages.syntax);
+    }
+
+    if(params.length > 0) {
+      start = parseInt(params.shift());
+      end = parseInt(params.shift());
+      if (isNaN(start) || isNaN(end)) {
+        return this._handleCallback(callback, null, messages.noint);
+      }
+    }
 
     if (this._hasKey(key)) {
       this._testType(key, 'string', true, callback);
       keyValue = this._getKey(key);
     }
-    for (let itr = 0; itr < keyValue.length; itr++) {
-      let val = keyValue.charCodeAt(itr);
+
+    let length = keyValue.length << 4;
+
+    if (end < 0) {
+      end = length + end;
+    }
+    if (start < 0) {
+      start = length + start;
+    }
+    if (start < 0) {
+      start = 0;
+    }
+    if (end >= length) {
+      end = length - 1;
+    }
+
+    let endByte = end >> 4;
+    let endOffset = end % 16;
+    let startByte = start >> 4;
+    let startOffset = start % 16;
+    let val;
+
+    // Do first byte with offset
+    val = keyValue.charCodeAt(startByte);
+    if (startOffset > 0) {
+      // move to offset
+      for (let itr = 0; itr < startOffset; itr++) {
+        val >>= 1;
+      }
+      for (let itr = startOffset; itr < 16; itr++) {
+        retValue += val & 1;
+        val >>= 1;
+      }
+    } else {
+      // Grab full byte below
+      startByte--;
+    }
+
+    // Do last byte with offset
+    val = keyValue.charCodeAt(endByte);
+    if (endOffset > 0) {
+      // move to offset
+      for (let itr = 0; itr < endOffset; itr++) {
+        retValue += val & 1;
+        val >>= 1;
+      }
+    } else {
+      // Grab full byte below
+      endByte++;
+    }
+
+    // Grab all middle bits
+    for (let itr = startByte + 1; itr < endByte - 1; itr++) {
+      val = keyValue.charCodeAt(itr);
       for (let jtr = 0; jtr < 16; jtr++) {
         retValue += val & 1;
         val >>= 1;
@@ -2086,11 +2150,11 @@ class MemoryCache extends Event {
   }
 
   decr(key, callback) {
-    return this._addToKey(key, -1, callback);
+    return this._handleCallback(callback, this._addToKey(key, -1, callback));
   }
 
   decrby(key, amount, callback) {
-    return this._addToKey(key, -amount, callback);
+    return this._handleCallback(callback, this._addToKey(key, -amount, callback));
   }
 
   get(key, callback) {
@@ -2133,11 +2197,11 @@ class MemoryCache extends Event {
   }
 
   incr(key, callback) {
-    return this._addToKey(key, 1, callback);
+    return this._handleCallback(callback, this._addToKey(key, 1, callback));
   }
 
   incrby(key, amount, callback) {
-    return this._addToKey(key, amount, callback);
+    return this._handleCallback(callback, this._addToKey(key, amount, callback));
   }
 
   incrbyfloat(key, amount, callback) {
@@ -2211,15 +2275,59 @@ class MemoryCache extends Event {
   }
 
   psetex(key, pttl, value, callback) {
-    return this.set(key, value, null, pttl, null, true, callback);
+    return this.set(key, value, 'px', pttl, 'xx', callback);
   }
 
-  set(key, value, ttl, pttl, notexist, onlyexist, callback) {
+//  set(key, value, ttl, pttl, notexist, onlyexist, callback) {
+  set(key, value, ...params) {
     const retVal = null;
-    pttl = pttl || ttl * 1000 || null;
+    params = __.flatten(params);
+    const callback = this._retrieveCallback(params);
+    let ttl, pttl, notexist, onlyexist;
+    // parse parameters
+    while(params.length > 0)
+    {
+      let param = params.shift();
+      switch(param.toString().toLowerCase()) {
+        case 'nx':
+          notexist = true;
+          break;
+        case 'xx':
+          onlyexist = true;
+          break;
+        case 'ex':
+          if (params.length === 0) {
+            return this._handleCallback(callback, null, messages.syntax);
+          }
+          ttl = parseInt(params.shift());
+          if (isNaN(ttl)) {
+            return this._handleCallback(callback, null, messages.noint);
+          }
+          break;
+        case 'px':
+          if (params.length === 0) {
+            return this._handleCallback(callback, null, messages.syntax);
+          }
+          pttl = parseInt(params.shift());
+          if (isNaN(pttl)) {
+            return this._handleCallback(callback, null, messages.noint);
+          }
+          break;
+        default:
+          return this._handleCallback(callback, null, messages.syntax);
+      }
+    }
+
     if (__.hasValue(ttl) && __.hasValue(pttl)) {
       return this._handleCallback(callback, null, messages.syntax);
     }
+
+    if (notexist && onlyexist) {
+      return this._handleCallback(callback, null, messages.syntax);
+    }
+
+    pttl = pttl || ttl * 1000 || null;
+    if (__.hasValue(pttl)) { pttl = Date.now() + pttl; }
     if (this._hasKey(key)) {
       this._testType(key, 'string', true, callback);
       if (notexist) {
@@ -2271,11 +2379,11 @@ class MemoryCache extends Event {
   }
 
   setex(key, ttl, value, callback) {
-    return this.set(key, value, ttl, null, null, true, callback);
+    return this.set(key, value, 'ex', ttl, callback);
   }
 
   setnx(key, value, callback) {
-    return this.set(key, value, null, null, true, false, callback);
+    return this.set(key, value, 'nx', callback);
   }
 
   setrange(key, offset, value, callback) {
@@ -2516,7 +2624,7 @@ class MemoryCache extends Event {
   // ## Internal - String ##
   // ---------------------------------------
   _addToKey(key, amount, callback) {
-    let keyValue = '0';
+    let keyValue = 0;
     if (this._hasKey(key)) {
       this._testType(key, 'string', true, callback);
       keyValue = parseInt(this._getKey(key));
@@ -2536,7 +2644,7 @@ class MemoryCache extends Event {
     const bytes = [];
     for (let itr = 0; itr < value.length; itr++) {
       const code = retVal.charCodeAt(itr);
-      bytes.push(code ^ 65535);
+      bytes.push(code ^ 0xFFFFFFFF);
     }
     return Buffer.from(bytes).toString();
   }

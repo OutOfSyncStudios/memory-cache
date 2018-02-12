@@ -1254,30 +1254,217 @@ describe('Memory Cache', () => {
   });
 
   describe('Strings', () => {
-    it('set');
-    it('set with callback');
-    it('append');
-    it('append with callback');
-    it('bitcount');
-    it('bitcount with callback');
+    it('set (bad expiration [empty])', () => {
+      let testfn = () => { client.set('strkey2', 'chuff', 'ex'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('set (bad milli expiration [empty])', () => {
+      let testfn = () => { client.set('strkey2', 'chuff', 'px'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('set (bad expiration [mutex])', () => {
+      let testfn = () => { client.set('strkey2', 'chuff', 'ex', 123, 'px', 123); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('set (bad expiration [no int])', () => {
+      let testfn = () => { client.set('strkey2', 'chuff', 'ex', 'px'); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('set (bad flags [mutex])', () => {
+      let testfn = () => { client.set('strkey2', 'chuff', 'xx', 'nx'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('set (bad params)', () => {
+      let testfn = () => { client.set('strkey2', 'chuff', '1234'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('set (basic)', () => {
+      let val = client.set('strkey', 'a');
+      expect(val).to.be.equal('OK');
+    });
+
+    it('set (with expiration)', () => {
+      let val = client.set('strkey2', 'chuff', 'ex', 120);
+      expect(val).to.be.equal('OK');
+    });
+
+    it('set (with millisecond expiration)', () => {
+      let val = client.set('strkey2', 'chuff', 'px', 120);
+      expect(val).to.be.equal('OK');
+    });
+
+    it('set (with xx flag)', () => {
+      let val = client.set('strkey3', 'chuff', 'xx');
+      expect(val).to.be.equal(null);
+    });
+
+    it('set with callback', (done) => {
+      client.set('strkey', 'c', (err, res) => {
+        expect(res).to.be.equal('OK');
+        done();
+      });
+    });
+
+    it('get (non-existing)', () => {
+      let val = client.get('strkey3');
+      expect(val).to.be.equal(null);
+    });
+
+    it('get', () => {
+      let val = client.get('strkey');
+      expect(val).to.be.equal('c');
+    });
+
+    it('get with callback', (done) => {
+      client.get('strkey', (err, res) => {
+        expect(res).to.be.equal('c');
+        done();
+      });
+    });
+
+    it('append (non-existing)', () => {
+      val = client.append('strkey3', 'at');
+      expect(val).to.be.equal(2);
+    });
+
+    it('append', () => {
+      val = client.append('strkey', 'at');
+      expect(val).to.be.equal(3);
+    });
+
+    it('append with callback', (done) => {
+      client.append('strkey3', 'at', (err, res) => {
+        expect(res).to.be.equal(4);
+        done();
+      });
+    });
+
+    it('bitcount (bad too many params)', () => {
+      let testfn = () => { client.bitcount('strkey4', '1', '1', '1'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('bitcount (bad too few params)', () => {
+      let testfn = () => { client.bitcount('strkey4', '1'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('bitcount (bad start index)', () => {
+      let testfn = () => { client.bitcount('strkey4', 'bad', '1'); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('bitcount (bad end index)', () => {
+      let testfn = () => { client.bitcount('strkey4', '1', 'bad'); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('bitcount (non-existing)', () => {
+      let val = client.bitcount('strkey4');
+      expect(val).to.be.equal(0);
+    });
+
+    it('bitcount', () => {
+      let val = client.bitcount('strkey');
+      expect(val).to.be.equal(8);
+    });
+
+    it('bitcount (with start and end)', () => {
+      let val = client.bitcount('strkey', 14, -2);
+      expect(val).to.be.equal(4);
+    });
+
+    it('bitcount with callback', (done) => {
+      client.bitcount('strkey', (err, res) => {
+        expect(res).to.be.equal(8);
+        done();
+      });
+    });
+
     it('bitop');
     it('bitop with callback');
-    it('decr');
-    it('decr with callback');
-    it('decrby');
-    it('decrby with callback');
-    it('get');
-    it('get with callback');
+
+    it('decr (non-existing)', () => {
+      let val = client.decr('numkey');
+      expect(val).to.be.equal(-1);
+    });
+
+    it('decr', () => {
+      let val = client.decr('numkey');
+      expect(val).to.be.equal(-2);
+    });
+
+    it('decr with callback', (done) => {
+      client.decr('numkey', (err, res) => {
+        expect(res).to.be.equal(-3);
+        done();
+      });
+    });
+
+    it('decrby (non-existing)', () => {
+      let val = client.decrby('numkey2', 2);
+      expect(val).to.be.equal(-2);
+    });
+
+    it('decrby', () => {
+      let val = client.decrby('numkey2', 2);
+      expect(val).to.be.equal(-4);
+    });
+
+    it('decrby with callback', (done) => {
+      client.decrby('numkey2', 2, (err, res) => {
+        expect(res).to.be.equal(-6);
+        done();
+      });
+    });
+
     it('getbit');
     it('getbit with callback');
     it('getrange');
     it('getrange with callback');
     it('getset');
     it('getset with callback');
-    it('incr');
-    it('incr with callback');
-    it('incrby');
-    it('incrby with callback');
+
+    it('incr (non-existing)', () => {
+      let val = client.incr('numkey3');
+      expect(val).to.be.equal(1);
+    });
+
+    it('incr', () => {
+      let val = client.incr('numkey3');
+      expect(val).to.be.equal(2);
+    });
+
+    it('incr with callback', (done) => {
+      client.incr('numkey3', (err, res) => {
+        expect(res).to.be.equal(3);
+        done();
+      });
+    });
+
+    it('incrby (non-existing)', () => {
+      let val = client.incrby('numkey4', 2);
+      expect(val).to.be.equal(2);
+    });
+
+    it('incrby', () => {
+      let val = client.incrby('numkey4', 2);
+      expect(val).to.be.equal(4);
+    });
+
+    it('incrby with callback', (done) => {
+      client.incrby('numkey4', 2, (err, res) => {
+        expect(res).to.be.equal(6);
+        done();
+      });
+    });
+
     it('incrbyfloat');
     it('incrbyfloat with callback');
     it('mget');
@@ -1333,12 +1520,12 @@ describe('Memory Cache', () => {
 
     it('dbsize', () => {
       let val = client.dbsize();
-      expect(val).to.equal(8);
+      expect(val).to.equal(Object.keys(client.cache).length);
     });
 
     it('dbsize with callback', (done) => {
       client.dbsize((err, res) => {
-        expect(res).to.equal(8);
+        expect(res).to.equal(Object.keys(client.cache).length);
         done();
       });
     });
