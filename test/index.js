@@ -1215,7 +1215,45 @@ describe('Memory Cache', () => {
   });
 
   describe('Sorted Sets', () => {
-    it('zadd');
+    it('zadd (no score)', () => {
+      let testfn = () => { client.zadd('sortedkey', 'xx'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('zadd (mismatched pairs)', () => {
+      let testfn = () => { client.zadd('sortedkey', 1.2); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('zadd (bad flags [mutex])', () => {
+      let testfn = () => { client.zadd('sortedkey', 'nx', 'xx', 1.2, 'value'); }
+      expect(testfn).to.throw('XX and NX');
+    });
+
+    it('zadd', () => {
+      let val = client.zadd('sortedkey', 1.2, 'lame');
+      expect(val).to.be.equal(1);
+    });
+
+    it('zadd (incr and ch flags)', () => {
+      let val = client.zadd('sortedkey', 'incr', 'ch', 1.2, 'lame');
+      expect(val).to.be.equal(1);
+      val = client.zscore('sortedkey', 'lame');
+      expect(val).to.be.equal(2.4);
+    });
+
+    it('zadd (nx flags)', () => {
+      let val = client.zadd('sortedkey', 'ch', 'nx', 1.2, 'lame');
+      expect(val).to.be.equal(0);
+    });
+
+    it('zadd (xx flags)', () => {
+      let val = client.zadd('sortedkey', 'nx', 1.2, 'lame');
+      expect(val).to.be.equal(1);
+      val = client.zscore('sortedkey', 'lame');
+      expect(val).to.be.equal(1.2);
+    });
+
     it('zadd with callback');
     it('zcard');
     it('zcard with callback');
@@ -1387,8 +1425,56 @@ describe('Memory Cache', () => {
       });
     });
 
-    it('bitop');
-    it('bitop with callback');
+    it('bitop (bad opertator)', () => {
+      let testfn = () => { client.bitop('wacky', 'bitop', 'bitop1', 'bitop2'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('bitop [not] (bad parameter count)', () => {
+      let testfn = () => { client.bitop('not', 'bitop', 'bitop1', 'bitop2'); }
+      expect(testfn).to.throw('BITOP NOT');
+    });
+
+    it('bitop [not]', () => {
+      client.set('bitop0', '\u0000');
+      client.set('bitop1', '\u0001');
+      client.set('bitop2', '\u0002');
+      client.set('bitop3', '\u0003');
+      let val = client.bitop('not', 'bitop', 'bitop0');
+      expect(val).to.be.equal(1);
+      val = client.get('bitop');
+      expect(val).to.be.equal('\uffff');
+    });
+
+    it('bit [and]', () => {
+      let val = client.bitop('and', 'bitop', 'bitop3', 'bitop2');
+      expect(val).to.be.equal(1);
+      val = client.get('bitop');
+      expect(val).to.be.equal('\u0002');
+    });
+
+    it('bit [or]', () => {
+      let val = client.bitop('or', 'bitop', 'bitop1', 'bitop3');
+      expect(val).to.be.equal(1);
+      val = client.get('bitop');
+      expect(val).to.be.equal('\u0003');
+    })
+
+    it('bit [xor]', () => {
+      let val = client.bitop('xor', 'bitop', 'bitop1', 'bitop3');
+      expect(val).to.be.equal(1);
+      val = client.get('bitop');
+      expect(val).to.be.equal('\u0002');
+    })
+
+    it('bitop with callback', (done) => {
+      client.bitop('xor', 'bitop', 'bitop1', 'bitop3', (err, res) => {
+        expect(res).to.be.equal(1);
+        let val = client.get('bitop');
+        expect(val).to.be.equal('\u0002');
+        done();
+      });
+    });
 
     it('decr (non-existing)', () => {
       let val = client.decr('numkey');
@@ -1424,12 +1510,66 @@ describe('Memory Cache', () => {
       });
     });
 
-    it('getbit');
-    it('getbit with callback');
-    it('getrange');
-    it('getrange with callback');
-    it('getset');
-    it('getset with callback');
+    it('getbit (non-existing)', () => {
+      let val = client.getbit('bad', 1);
+      expect(val).to.be.equal(0);
+    });
+
+    it('getbit (out of range)', () => {
+      let val = client.getbit('strkey', 50);
+      expect(val).to.be.equal(0);
+    });
+
+    it('getbit (out of range)', () => {
+      let val = client.getbit('strkey', 1);
+      expect(val).to.be.equal(1);
+    });
+
+    it('getbit with callback', (done) => {
+      client.getbit('strkey', 1, (err, res) => {
+        expect(res).to.be.equal(1);
+        done();
+      });
+    });
+
+    it('getrange (non-existing)', () => {
+      let val = client.getrange('bad', 1, -1);
+      expect(val).to.be.equal('');
+    });
+
+    it('getrange (bad range :: end < start)', () => {
+      let val = client.getrange('strkey', 1, 0);
+      expect(val).to.be.equal('');
+    });
+
+    it('getrange', () => {
+      let val = client.getrange('strkey', 1, -1);
+      expect(val).to.be.equal('at');
+    });
+
+    it('getrange with callback', (done) => {
+      client.getrange('strkey', 1, -1, (err, res) => {
+        expect(res).to.be.equal('at');
+        done();
+      })
+    });
+
+    it('getset (non-existing)', () => {
+      let val = client.getset('bad', '1');
+      expect(val).to.be.equal(null);
+    });
+
+    it('getset', () => {
+      let val = client.getset('strkey', 'dog');
+      expect(val).to.be.equal('cat');
+    });
+
+    it('getset with callback', (done) => {
+      client.getset('strkey', 'cat', (err, res) => {
+        expect(res).to.be.equal('dog');
+        done();
+      });
+    });
 
     it('incr (non-existing)', () => {
       let val = client.incr('numkey3');
@@ -1465,35 +1605,255 @@ describe('Memory Cache', () => {
       });
     });
 
-    it('incrbyfloat');
-    it('incrbyfloat with callback');
-    it('mget');
-    it('mget with callback');
-    it('mset');
-    it('mset with callback');
-    it('msetnx');
-    it('msetnx with callback');
-    it('psetex');
-    it('psetex with callback');
-    it('setbit');
-    it('setbit with callback');
-    it('setex');
-    it('setex with callback');
-    it('setnx');
-    it('setnx with callback');
-    it('setrange');
-    it('setrange with callback');
-    it('strlen');
-    it('strlen with callback');
+    it('incrbyfloat (non-exsiting)', () => {
+      let val = client.incrbyfloat('numkey5', 1.11);
+      expect(val).to.be.equal(1.11);
+    });
+
+    it('incrbyfloat', () => {
+      let val = client.incrbyfloat('numkey5', 1.11);
+      expect(val).to.be.equal(2.22);
+    });
+
+    it('incrbyfloat with callback', () => {
+      client.incrbyfloat('numkey5', 1.11, (err, res) => {
+        expect(res).to.be.equal(3.33);
+      });
+    });
+
+    it('mget', () => {
+      let val = client.mget('numkey', 'numkey2', 'numkey3', 'numkey4', 'numkey5', 'numkey6');
+      expect(val.length).to.be.equal(6);
+      expect(val).to.include.members(['6', '3.33', '3', '-6', '-3', null]);
+    });
+
+    it('mget with callback', (done) => {
+      client.mget('numkey', 'numkey2', 'numkey3', 'numkey4', 'numkey5', 'numkey6', (err, res) => {
+        expect(res.length).to.be.equal(6);
+        expect(res).to.include.members(['6', '3.33', '3', '-6', '-3', null]);
+        done();
+      });
+    });
+
+    it('mset (wrong arg count - too many)', () => {
+      let testfn = () => { client.mset('key1', 1, 'key2'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('mset (wrong arg count - too few)', () => {
+      let testfn = () => { client.mset('key1'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('mset', () => {
+      let val = client.mset('strkey', 'cat', 'strkey2', 'dog', 'newstrkey', 'bird');
+      expect(val).to.be.equal('OK');
+    });
+
+    it('mset with callback', (done) => {
+      client.mset('strkey', 'cat', 'strkey2', 'dog', 'newstrkey', 'bird', (err, res) => {
+        expect(res).to.be.equal('OK');
+        done();
+      });
+    });
+
+    it('msetnx (wrong arg count - too many)', () => {
+      let testfn = () => { client.msetnx('key1', 1, 'key2'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('msetnx (wrong arg count - too few)', () => {
+      let testfn = () => { client.msetnx('key1'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('msetnx (already existing)', () => {
+      let val = client.msetnx('strkey', 'cat', 'strkey2', 'dog', 'newstrkey2', 'bird');
+      expect(val).to.be.equal(0);
+    });
+
+    it('msetnx', () => {
+      let val = client.msetnx('newstrkey2', 'bird', 'newstrkey3', 'monkey');
+      expect(val).to.be.equal(1);
+    });
+
+    it('msetnx with callback', (done) => {
+      let val = client.msetnx('newstrkey4', 'racooon', 'newstrkey5', 'bison', (err, res) => {
+        expect(res).to.be.equal(1);
+        done();
+      });
+    });
+
+    it('psetex', () => {
+      let val = client.psetex('expirekey', 200, '123');
+      expect(val).to.be.equal('OK');
+    });
+
+    it('psetex with callback', (done) => {
+      client.psetex('expirekey', 2000, '123', (err, res) => {
+        expect(res).to.be.equal('OK');
+        done();
+      });
+    });
+
+    it('setbit (non-existing)', () => {
+      let val = client.setbit('newk', 6, 1);
+      expect(val).to.be.equal(0);
+      val = client.get('newk');
+      expect(val).to.be.equal('@');
+    });
+
+    it('setbit', () => {
+      client.set('strkey', 'cat');
+      let val = client.setbit('strkey', 0, 0);
+      expect(val).to.be.equal(1);
+      val = client.get('strkey');
+      expect(val).to.be.equal('bat');
+    });
+
+    it('setbit with callback', (done) => {
+      client.setbit('strkey', 0, 1, (err, res) => {
+        expect(res).to.be.equal(0);
+        let val = client.get('strkey');
+        expect(val).to.be.equal('cat');
+        done();
+      });
+    });
+
+    it('setex', () => {
+      let val = client.setex('expirekey', 20, '567');
+      expect(val).to.be.equal('OK');
+    });
+
+    it('setex with callback', (done) => {
+      client.setex('expirekey', 20, '123', (err, res) => {
+        expect(res).to.be.equal('OK');
+        done();
+      });
+    });
+
+    it('setnx (existing)', () => {
+      let val = client.setnx('expirekey', 123);
+      expect(val).to.be.equal(0);
+    });
+
+    it('setnx', () => {
+      let val = client.setnx('newnew', 123);
+      expect(val).to.be.equal(1);
+    });
+
+    it('setnx with callback', (done) => {
+      client.setnx('newnew1', 123, (err, res) => {
+        expect(res).to.be.equal(1);
+        done();
+      });
+    });
+
+    it('setrange (non-existing)', () => {
+      let val = client.setrange('newk1', 2, 'ok');
+      expect(val).to.be.equal(4);
+      val = client.get('newk1');
+      expect(val).to.be.equal('\u0000\u0000ok');
+    });
+
+    it('setrange', () => {
+      let val = client.setrange('newk1', 0, 'ok');
+      expect(val).to.be.equal(4);
+      val = client.get('newk1');
+      expect(val).to.be.equal('okok');
+    });
+
+    it('setrange with callback', (done) => {
+      client.setrange('newk1', 2, 'ay', (err, res) => {
+        expect(res).to.be.equal(4);
+        let val = client.get('newk1');
+        expect(val).to.be.equal('okay');
+        done();
+      });
+    });
+
+    it('strlen (non-existing)', () => {
+      let val = client.strlen('bad');
+      expect(val).to.be.equal(0);
+    });
+
+    it('strlen', () => {
+      let val = client.strlen('newnew1');
+      expect(val).to.be.equal(3);
+    });
+
+    it('strlen with callback', (done) => {
+      client.strlen('newnew1', (err, res) => {
+        expect(res).to.be.equal(3);
+        done();
+      });
+    });
   });
 
   describe('Transactions', () => {
-    it('discard');
-    it('discard with callback');
-    it('exec');
-    it('exec with callback');
-    it('multi');
-    it('multi with callback');
+    let dbsize;
+    before(() => {
+      dbsize = client.dbsize();
+    });
+
+    it('multi', () => {
+      let val = client.multi();
+      expect(val).to.be.equal('OK');
+    });
+
+    it('discard', () => {
+      let val = client.discard();
+      expect(val).to.be.equal('OK');
+    });
+
+    it('discard (without multi)', () => {
+      let testfn = () => { client.discard(); }
+      expect(testfn).to.throw('DISCARD without MULTI');
+    });
+
+    it('exec (without multi)', () => {
+      let testfn = () => { client.exec(); }
+      expect(testfn).to.throw('EXEC without MULTI');
+    });
+
+    it('multi (nested multi)', () => {
+      let testfn = () => { client.multi(); client.multi(); }
+      expect(testfn).to.throw('MULTI calls');
+      client.discard();
+    });
+
+    it('multi with callback', (done) => {
+      client.multi((err, res) => {
+        expect(res).to.be.equal('OK');
+        done();
+      });
+    });
+
+    it('exec', () => {
+      let val = client.set('atomic1', 2);
+      expect(val).to.be.equal('QUEUED');
+      client.set('atomic2', 1);
+      val = client.exec();
+      expect(val.length).to.be.equal(3);
+      expect(val).to.include.members(['OK']);
+      expect(client.dbsize()).to.be.equal(dbsize + 2);
+    });
+
+    it('exec with callback', (done) => {
+      client.multi();
+      client.exec((err, res) => {
+        expect(res).to.include.members(['OK']);
+        done();
+      });
+    });
+
+    it('discard with callback', (done) => {
+      client.multi();
+      client.discard((err, res) => {
+        expect(res).to.be.equal('OK');
+        done();
+      });
+    });
   });
 
   describe('Server', () => {

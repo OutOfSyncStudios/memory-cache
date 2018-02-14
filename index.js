@@ -12,7 +12,9 @@ const messages = {
   noint: 'ERR value is not an integer or out of range',
   nofloat: 'ERR value is not an float or out of range',
   nokey: 'ERR no such key',
-  nomulti: 'ERR DISCARD without MULTI',
+  nomultiinmulti: 'ERR MULTI calls can not be nested',
+  nomultiexec: 'ERR EXEC without MULTI',
+  nomultidiscard: 'ERR DISCARD without MULTI',
   busykey: 'ERR target key name is busy',
   syntax: 'ERR syntax error',
   unsupported: 'MemoryCache does not support that operation',
@@ -240,6 +242,7 @@ class MemoryCache extends Event {
 
   hmget(key, ...fields) {
     const retVals = [];
+    fields = __.flatten(fields);
     const callback = this._retrieveCallback(fields);
 
     if (this._hasKey(key)) {
@@ -1374,7 +1377,7 @@ class MemoryCache extends Event {
 
     const newlength = __.size(val);
     if (change) {
-      retVal = updates.legnth();
+      retVal = updates.length;
     } else {
       retVal = newlength - length;
     }
@@ -1723,7 +1726,7 @@ class MemoryCache extends Event {
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true, callback);
-      for (let idx = 0; idx < members.legnth; idx++) {
+      for (let idx = 0; idx < members.length; idx++) {
         const member = members[idx];
         if (this._hasField(key, member)) {
           delete this.cache[key].value[member];
@@ -2114,7 +2117,7 @@ class MemoryCache extends Event {
   bitop(operation, destkey, ...srckeys) {
     let retVal = 0;
     let setVal = null;
-
+    srckeys = __.flatten(srckeys);
     const callback = this._retrieveCallback(srckeys);
 
     if (srckeys.length < 1) {
@@ -2131,7 +2134,7 @@ class MemoryCache extends Event {
         retVal = setVal.length;
         break;
       case 'not':
-        if (srckeys.legnth > 1) {
+        if (srckeys.length > 1) {
           return this._handleCallback(callback, null, messages.bitopnotWrongCount);
         }
         setVal = this._strnot(keys[0]);
@@ -2169,30 +2172,53 @@ class MemoryCache extends Event {
   getbit(key, offset, callback) {
     let retVal = 0;
     const byteoffset = Math.floor(offset / 16);
-    const keyValue = this.get(key) || '';
-    let bitoffset = offset % 16;
-    if (byteoffset > keyValue.length) {
-      return this._handleCallback(callback, retVal);
+    if (this._hasKey(key)) {
+      this._testType(key, 'string', true, callback);
+      const keyValue = this._getKey(key) || '';
+      let bitoffset = offset % 16;
+      if (byteoffset > keyValue.length) {
+        return this._handleCallback(callback, retVal);
+      }
+      let val = keyValue.charCodeAt(byteoffset);
+      while (bitoffset > 0) {
+        val >>= 1;
+        bitoffset--;
+      }
+      retVal = val & 1;
     }
-    let val = keyValue.charCodeAt(byteoffset);
-    while (bitoffset > 0) {
-      val >>= 1;
-      bitoffset--;
-    }
-    retVal = val & 1;
     return this._handleCallback(callback, retVal);
   }
 
   getrange(key, start, end, callback) {
-    const len = end - start + 1;
-    const val = this.get(key);
-    const retVal = val.substr(start, len);
+    let retVal = '';
+    if (this._hasKey(key)) {
+      this._testType(key, 'string', true, callback);
+      const val = this._getKey(key);
+      let length = val.length;
+
+      if (end < 0) {
+        end = length + end;
+      }
+      if (start < 0) {
+        start = length + start;
+      }
+
+      const len = end - start + 1;
+      retVal = val.substr(start, len);
+    }
+
     return this._handleCallback(callback, retVal);
   }
 
   getset(key, value, callback) {
-    const retVal = this.get(key);
-    this.set(key, value);
+    let retVal = null;
+
+    if (this._hasKey(key)) {
+      this._testType(key, 'string', true, callback);
+      retVal = this._getKey(key);
+      this.set(key, value);
+    }
+
     return this._handleCallback(callback, retVal);
   }
 
@@ -2205,7 +2231,7 @@ class MemoryCache extends Event {
   }
 
   incrbyfloat(key, amount, callback) {
-    let keyValue = '0.0';
+    let keyValue = 0.0;
     if (this._hasKey(key)) {
       this._testType(key, 'string', true, callback);
       keyValue = parseFloat(this._getKey(key));
@@ -2222,6 +2248,7 @@ class MemoryCache extends Event {
 
   mget(...keys) {
     const retVals = [];
+    keys = __.flatten(keys);
     const callback = this._retrieveCallback(keys);
     for (let itr = 0; itr < keys.length; itr++) {
       const key = keys[itr];
@@ -2240,7 +2267,7 @@ class MemoryCache extends Event {
     const callback = this._retrieveCallback(params);
 
     // params should have key and value pairs and should be even in length
-    if (params.legnth % 2 !== 0) {
+    if (params.length % 2 !== 0) {
       return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'mset'));
     }
     const pairs = params.length / 2;
@@ -2253,21 +2280,28 @@ class MemoryCache extends Event {
   }
 
   msetnx(...params) {
-    let retVal = 0;
+    let retVal = 1;
     const callback = this._retrieveCallback(params);
 
     // params should have key and value pairs and should be even in length
-    if (params.legnth % 2 !== 0) {
+    if (params.length % 2 !== 0) {
       return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'msetnx'));
     }
     const pairs = params.length / 2;
+    let key, value;
+
+    // Check that all keys do not exist
     for (let itr = 0; itr < pairs; itr++) {
-      const key = params[itr * 2];
-      const value = params[itr * 2 + 1];
-      // Only set the value if they do not exist
-      if (!this._hasKey(key)) {
+      key = params[itr * 2];
+      if (this._hasKey(key)) { retVal &= 0; }
+    }
+
+    if (retVal === 1) {
+      for (let itr = 0; itr < pairs; itr++) {
+        key = params[itr * 2];
+        value = params[itr * 2 + 1];
+        // Only set the value if they do not exist
         this.cache[key] = this._makeKey(value, 'string');
-        retVal = 1;
       }
     }
 
@@ -2275,7 +2309,12 @@ class MemoryCache extends Event {
   }
 
   psetex(key, pttl, value, callback) {
-    return this.set(key, value, 'px', pttl, 'xx', callback);
+    try {
+      let retVal = this.set(key, value, 'px', pttl);
+      return this._handleCallback(callback, retVal);
+    } catch (err) {
+      return this._handleCallback(callback, null, err);
+    }
   }
 
 //  set(key, value, ttl, pttl, notexist, onlyexist, callback) {
@@ -2336,24 +2375,25 @@ class MemoryCache extends Event {
     } else if (onlyexist) {
       return this._handleCallback(callback, retVal);
     }
-    this.cache[key] = this._makeKey(value, 'string', pttl);
+    this.cache[key] = this._makeKey(value.toString(), 'string', pttl);
 
     return this._handleCallback(callback, messages.ok);
   }
 
   setbit(key, offset, value, callback) {
     value &= 1;
+    let getVal = '';
     const byteoffset = Math.floor(offset / 16);
     const bitoffset = offset % 16;
-    let getVal = this.get(key);
 
-    let bitmask = 1;
+    if (this._hasKey(key)) {
+      this._testType(key, 'string', true, callback);
+      getVal = this._getKey(key);
+    }
 
     // Create bitmask
-    for (let itr = 0; itr < bitoffset; itr++) {
-      // Shift Left the bitmask to get the bit into the correct position
-      bitmask <<= 1;
-    }
+    let bitmask = 1;
+    bitmask <<= bitoffset;
 
     // Zero-pad the string value (+1 offset length for the current bit to set)
     if (__.hasValue(getVal)) {
@@ -2372,24 +2412,43 @@ class MemoryCache extends Event {
       // Set the specified bit
       code |= bitmask;
     }
-    getVal[byteoffset] = Buffer.from([code]).toString();
+
+    let valArr = getVal.split('');
+    valArr[byteoffset] = String.fromCharCode(code);
+    getVal = valArr.join('');
 
     this.set(key, getVal);
     return this._handleCallback(callback, retVal);
   }
 
   setex(key, ttl, value, callback) {
-    return this.set(key, value, 'ex', ttl, callback);
+    try {
+      let retVal = this.set(key, value, 'ex', ttl);
+      return this._handleCallback(callback, retVal);
+    } catch(err) {
+      return this._handleCallback(callback, null, err);
+    }
   }
 
   setnx(key, value, callback) {
-    return this.set(key, value, 'nx', callback);
+    try {
+      let retVal = this.set(key, value, 'nx');
+      retVal = (retVal === 'OK')?1:0;
+      return this._handleCallback(callback, retVal);
+    } catch(err) {
+      return this._handleCallback(callback, null, err);
+    }
   }
 
   setrange(key, offset, value, callback) {
     let beginning = '';
     let end = '';
-    const getVal = this.get(key);
+    let getVal = ''
+    if (this._hasKey(key)) {
+      this._testType(key, 'string', true, callback);
+      getVal = this._getKey(key);
+    }
+
     if (__.hasValue(getVal)) {
       const fullStr = __.padEnd(getVal, offset, '\u0000');
       beginning = fullStr.substr(0, offset);
@@ -2405,7 +2464,12 @@ class MemoryCache extends Event {
 
   strlen(key, callback) {
     let retVal = 0;
-    const getVal = this.get(key);
+    let getVal = '';
+    if (this._hasKey(key)) {
+      this._testType(key, 'string', true, callback);
+      getVal = this._getKey(key);
+    }
+
     if (__.hasValue(getVal)) {
       retVal = getVal.length;
     }
@@ -2428,7 +2492,7 @@ class MemoryCache extends Event {
       this.multiMode = false;
       this.responseMessages = [];
     } else if (!silent) {
-      return this._handleCallback(callback, null, messages.nomulti);
+      return this._handleCallback(callback, null, messages.nomultidiscard);
     }
     return this._handleCallback(callback, messages.ok);
   }
@@ -2436,7 +2500,7 @@ class MemoryCache extends Event {
   exec(callback) {
     // Run the queue and clear queue mode
     if (!this.multiMode) {
-      return this._handleCallback(callback, null, messages.nomulti);
+      return this._handleCallback(callback, null, messages.nomultiexec);
     }
     this.multiMode = false;
     this.databases[this.currentDBIndex] = Object.assign(this.tempCache);
@@ -2449,11 +2513,15 @@ class MemoryCache extends Event {
 
   multi(callback) {
     // Set Queue mode active
+    if (this.multiMode) {
+      return this._handleCallback(callback, null, messages.nomultiinmulti);
+    }
     this.multiMode = true;
     this.tempCache = Object.assign(this.cache);
     this.cache = this.tempCache;
+    this.responseMessages = [];
 
-    return this._handleCallback(callback, messages.ok);
+    return this._handleCallback(callback, messages.ok, null, false);
   }
 
   unwatch() {
@@ -2526,19 +2594,26 @@ class MemoryCache extends Event {
   _logReturn(message) {
     if (!__.isUndefined(message)) {
       if (this.multiMode) {
-        this.responseMessages.push(message);
-        if (message === messages.ok) { message = messages.queue; }
+        if (__.hasValue(this.responseMessages)) {
+          this.responseMessages.push(message);
+          if (message === messages.ok) { message = messages.queued; }
+        }
       }
       return message;
     }
     return;
   }
 
-  _handleCallback(callback, message, error) {
-    const err = this._logReturn(error);
-    const msg = this._logReturn(message);
+  _handleCallback(callback, message, error, nolog) {
+    let err = error;
+    let msg = message;
+    nolog = __.isUnset(nolog)?true:nolog;
+    if (nolog) {
+      err = this._logReturn(error);
+      msg = this._logReturn(message);
+    }
     if (typeof callback === 'function') {
-      callback(error, msg);
+      callback(err, msg);
       return;
     }
     if (err) {
@@ -2640,13 +2715,14 @@ class MemoryCache extends Event {
   }
 
   _strnot(value) {
-    const retVal = value;
     const bytes = [];
+    let newPoint = 0;
     for (let itr = 0; itr < value.length; itr++) {
-      const code = retVal.charCodeAt(itr);
-      bytes.push(code ^ 0xFFFFFFFF);
+      const code = value.charCodeAt(itr);
+      newPoint = ((code & 0xFFFF) ^ 0xFFFF) & 0xFFFF;
+      bytes.push(String.fromCharCode(newPoint));
     }
-    return Buffer.from(bytes).toString();
+    return bytes.join('');
   }
 
   _strbit(op, values) {
@@ -2658,25 +2734,27 @@ class MemoryCache extends Event {
       retVal = __.padEnd(retVal, next.length, '\u0000');
       next = __.padEnd(next, retVal.length, '\u0000');
       bytes = [];
-      for (let jtr = 0; jtr < next.legnth; jtr++) {
+      for (let jtr = 0; jtr < next.length; jtr++) {
         const destCode = retVal.charCodeAt(jtr);
         const srcCode = next.charCodeAt(jtr);
+        let val = 0;
         switch (op) {
           case 'and':
-            bytes.push(destCode & srcCode);
+            val = destCode & srcCode;
             break;
           case 'or':
-            bytes.push(destCode | srcCode);
+            val = destCode | srcCode;
             break;
           case 'xor':
-            bytes.push(destCode ^ srcCode);
+            val = destCode ^ srcCode;
             break;
           default:
-            bytes.push(destCode);
+            val = destCode;
             break;
         }
+        bytes.push(String.fromCharCode(val));
       }
-      retVal = Buffer.from(bytes).toString();
+      retVal = bytes.join('');
     }
     return retVal;
   }
