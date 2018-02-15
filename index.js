@@ -216,12 +216,22 @@ class MemoryCache extends Event {
   }
 
   hincrby(key, field, value, callback) {
-    const retVal = this._addToField(key, field, value, false, callback);
+    let retVal;
+    try {
+      retVal = this._addToField(key, field, value, false);
+    } catch (err) {
+      return this._handleCallback(callback, null, err);
+    }
     return this._handleCallback(callback, retVal);
   }
 
   hincrbyfloat(key, field, value, callback) {
-    const retVal = this._addToField(key, field, value, true, callback);
+    let retVal;
+    try {
+      retVal = this._addToField(key, field, value, true);
+    } catch (err) {
+      return this._handleCallback(callback, null, err);
+    }
     return this._handleCallback(callback, retVal);
   }
 
@@ -2241,11 +2251,23 @@ class MemoryCache extends Event {
   }
 
   decr(key, callback) {
-    return this._handleCallback(callback, this._addToKey(key, -1, callback));
+    let retVal = null;
+    try {
+      retVal = this._addToKey(key, -1);
+    } catch (err) {
+      return this._handleCallback(callback, null, err);
+    }
+    return this._handleCallback(callback, retVal);
   }
 
   decrby(key, amount, callback) {
-    return this._handleCallback(callback, this._addToKey(key, -amount, callback));
+    let retVal = null;
+    try {
+      retVal = this._addToKey(key, -amount);
+    } catch (err) {
+      return this._handleCallback(callback, null, err);
+    }
+    return this._handleCallback(callback, retVal);
   }
 
   get(key, callback) {
@@ -2311,11 +2333,23 @@ class MemoryCache extends Event {
   }
 
   incr(key, callback) {
-    return this._handleCallback(callback, this._addToKey(key, 1, callback));
+    let retVal = null;
+    try {
+      retVal = this._addToKey(key, 1);
+    } catch (err) {
+      return this._handleCallback(callback, null, err);
+    }
+    return this._handleCallback(callback, retVal);
   }
 
   incrby(key, amount, callback) {
-    return this._handleCallback(callback, this._addToKey(key, amount, callback));
+    let retVal = null;
+    try {
+      retVal = this._addToKey(key, amount);
+    } catch (err) {
+      return this._handleCallback(callback, null, err);
+    }
+    return this._handleCallback(callback, retVal);
   }
 
   incrbyfloat(key, amount, callback) {
@@ -2647,8 +2681,9 @@ class MemoryCache extends Event {
   }
 
   _testType(key, type, throwError, callback) {
-    throwError = throwError || false;
-    if (this.type(key) !== type) {
+    throwError = __.hasValue(throwError) ? throwError : false;
+    let keyType = this._key(key).type;
+    if (keyType !== type) {
       if (throwError) {
         return this._handleCallback(callback, null, messages.wrongTypeOp);
       }
@@ -2741,6 +2776,11 @@ class MemoryCache extends Event {
     useFloat = useFloat || false;
     let fieldValue = useFloat ? '0.0' : '0';
     let value = 0;
+
+    if (isNaN(amount) || __.isUnset(amount)) {
+      return this._handleCallback(callback, null, useFloat ? messages.nofloat : messages.noint);
+    }
+
     if (this._hasKey(key)) {
       this._testType(key, 'hash', true, callback);
       if (this._hasField(key, field)) {
@@ -2753,10 +2793,6 @@ class MemoryCache extends Event {
     fieldValue = useFloat ? parseFloat(value) : parseInt(value);
     amount = useFloat ? parseFloat(amount) : parseInt(amount);
     if (isNaN(fieldValue) || __.isUnset(fieldValue)) {
-      return this._handleCallback(callback, null, useFloat ? messages.nofloat : messages.noint);
-    }
-
-    if (isNaN(amount) || __.isUnset(amount)) {
       return this._handleCallback(callback, null, useFloat ? messages.nofloat : messages.noint);
     }
 
@@ -2789,6 +2825,11 @@ class MemoryCache extends Event {
   // ---------------------------------------
   _addToKey(key, amount, callback) {
     let keyValue = 0;
+
+    if (isNaN(amount) || __.isUnset(amount)) {
+      return this._handleCallback(callback, null, messages.noint);
+    }
+
     if (this._hasKey(key)) {
       this._testType(key, 'string', true, callback);
       keyValue = parseInt(this._getKey(key));

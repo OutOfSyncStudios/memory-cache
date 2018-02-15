@@ -175,8 +175,24 @@ describe('Memory Cache', () => {
       });
     });
 
-    it('hincrby (non-existing)', () => {
-      const val = client.hincrby('testkey', 'no-exist', '12');
+    it('hincrby (bad key/field)', () => {
+      let testfn = () => { client.hincrby('testkey', 'testfield4', '12'); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('hincrby (bad value)', () => {
+      let testfn = () => { client.hincrby('testkey', 'no-exist', 'fwq'); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('hincrby (non-existing key)', () => {
+      const val = client.hincrby('testkeyalpha', 'non-exist', '12');
+      expect(val).to.be.equal(12);
+      client.del('testkeyalpha');
+    });
+
+    it('hincrby (non-existing field)', () => {
+      const val = client.hincrby('testkey', 'non-exist', '12');
       expect(val).to.be.equal(12);
       client.hdel('testkey', 'no-exist');
     });
@@ -191,6 +207,16 @@ describe('Memory Cache', () => {
         expect(res).to.be.equal(25);
         done();
       });
+    });
+
+    it('hincrbyfloat (bad value)', () => {
+      let testfn = () => { client.hincrbyfloat('testkey', 'no-exist', 'fwq'); }
+      expect(testfn).to.throw('float');
+    });
+
+    it('hincrbyfloat (bad key/field)', () => {
+      let testfn = () => { client.hincrbyfloat('testkey', 'testfield4', '1.5'); }
+      expect(testfn).to.throw('float');
     });
 
     it('hincrbyfloat (non-existing)', () => {
@@ -227,12 +253,12 @@ describe('Memory Cache', () => {
 
     it('hlen', () => {
       const val = client.hlen('testkey');
-      expect(val).to.be.equal(3);
+      expect(val).to.be.equal(4);
     });
 
     it('hlen with callback', (done) => {
       client.hlen('testkey', (err, res) => {
-        expect(res).to.be.equal(3);
+        expect(res).to.be.equal(4);
         done();
       });
     });
@@ -2220,6 +2246,11 @@ describe('Memory Cache', () => {
       });
     });
 
+    it('incr (non integer key)', () => {
+      let testfn = () => { client.incr('strkey'); }
+      expect(testfn).to.throw('integer');
+    });
+
     it('incr (non-existing)', () => {
       let val = client.incr('numkey3');
       expect(val).to.be.equal(1);
@@ -2235,6 +2266,11 @@ describe('Memory Cache', () => {
         expect(res).to.be.equal(3);
         done();
       });
+    });
+
+    it('incrby (bad value)', () => {
+      let testfn = () => { client.incrby('numkey3', 'f'); }
+      expect(testfn).to.throw('integer');
     });
 
     it('incrby (non-existing)', () => {
@@ -2909,6 +2945,20 @@ describe('Memory Cache', () => {
     it('_strbit with bad or missing operator', () => {
       let val = client._strbit('', ['moo', 'cat']);
       expect(val).to.be.equal('moo');
+    });
+
+    it('_testType in silent mode', () => {
+      client.set('test', '1');
+      let val = client._testType('test', 'string', false);
+      expect(val).to.be.equal(true);
+      val = client._testType('test', 'zset', false);
+      expect(val).to.be.equal(false);
+    });
+
+    it('_unsupported in bypass mode', () => {
+      client.options.bypassUnsupported = true;
+      let val = client._unsupported();
+      expect(val).to.be.equal(undefined);
     });
   });
 });
