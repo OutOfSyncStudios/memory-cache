@@ -14,7 +14,7 @@
 
 Memory Cache is designed to be a fully-functional stand-in replacement for mocking Redis and fail-over in production systems for when Redis is not available. This package is intentionally designed to mimic the behavior of the node [`redis` module](https://www.npmjs.com/package/redis) and can be used with [nearly all commands supported by Redis](#commands)<sup>†</sup>.
 
-It has been rigorously tested with over 500 unit test.
+Unlike some other Redis mocking library, thought has been put into achieving full Redis command coverage. Many other libraries only provide incomplete coverage by providing only the most commonly used commands. MemoryCache currently provides 224 of 267 (~85%) of the available Redis commands. With coverage for the remaining commands planned. All commands have been rigorously tested with over 500 unit test.
 
 † [See below](#commands)
 
@@ -57,10 +57,10 @@ Disconnects from the memory cache and emits the `end` event.
 ## MemoryCache.end()
 Disconnects from the memory cache and emits the `end` event. Unlike the Redis client this is identical to calling quit.
 
-## Command simplification
+# Command simplification
 Where possible, this module mimics the return data behavior of the Redis module.  For example, the `.hmset` will accept a single object hash to set multiple fields. Similar `.hmget` will return an object hash.
 
-## Multiple parameters
+# Multiple parameters
 Many Redis commands like `set`, `mget`, etc. accept multiple parameters. The memory cache library support passing all additional parameters.
 
 **For example:**
@@ -75,7 +75,7 @@ Additionally, if a command is multiple words, then the additional portion of the
   client.flushall('async');
 ```
 
-## Using Promises
+# Using Promises
 Every Redis command can be called with `*Async` at the end. This will invoke the Promisified variant of the command and return a Promise.
 
 **For Example:**
@@ -89,7 +89,7 @@ Every Redis command can be called with `*Async` at the end. This will invoke the
   });
 ```
 
-## Redis Commands
+# Redis Commands
 <a name="commands"></a>
 
 MemoryCache support all but a select few [Redis Commands](https://redis.io/commands) and returns then data as close to identically as possible to the [`redis` module](https://www.npmjs.com/package/redis). Any errors are thrown as exceptions which should be caught.  The commands which are unavailable are as follows:
@@ -107,10 +107,6 @@ MemoryCache support all but a select few [Redis Commands](https://redis.io/comma
 * DEBUG *
 * EVAL
 * EVALSHA
-* GEOADD
-* GEODIST
-* GEOHASH
-* GEOPOS
 * GEORADIUS
 * GEORADIUSBYMEMBER
 * HSCAN

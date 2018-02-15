@@ -2,6 +2,8 @@
 
 const __ = require('@mediaxpost/lodashext');
 const bluebird = require('bluebird');
+const geohash = require('ngeohash');
+const geolib = require('geolib');
 const Event = require('events');
 const pkg = require('./package.json');
 
@@ -141,20 +143,139 @@ class MemoryCache extends Event {
   // ---------------------------------------
   // ## Geo ##
   // ---------------------------------------
-  geoadd(...params) {
-    this._unsupported();
+  geoadd(key, ...params) {
+    let retVal = null;
+    const callback = this._retrieveCallback(params);
+    if (params.length < 3) {
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'geoadd'));
+    }
+    if (params.length % 3 !== 0) {
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'geoadd'));
+    }
+
+    let long, lat, name;
+    const data = [];
+    while (0 < params.length) {
+      long = parseFloat(params.shift());
+      lat = parseFloat(params.shift());
+      if (isNaN(long) || isNaN(lat)) {
+        return this._handleCallback(callback, null, messages.nofloat);
+      }
+      let hashint = geohash.encode_int(lat, long);
+      data.push(hashint);
+      name = params.shift();
+      data.push(name);
+    }
+
+    try {
+      retVal = this.zadd(key, data);
+    } catch (err) {
+      return this._handleCallback(callback, null, err);
+    }
+
+    return this._handleCallback(callback, retVal);
   }
 
-  geodist(...params) {
-    this._unsupported();
+  geodist(key, member1, member2, ...params) {
+    let retVal = null;
+    const callback = this._retrieveCallback(params);
+    let conversion = 'm';
+
+    if (params.length > 1) {
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'geodist'));
+    }
+    if (params.length > 0) {
+      conversion = params[0];
+      switch (conversion) {
+        case 'km':
+        case 'm':
+        case 'mi':
+        case 'ft':
+          break;
+        default:
+          return this._handleCallback(callback, null, messages.syntax);
+      }
+    }
+
+    let val1 = this.zscore(key, member1);
+    let val2 = this.zscore(key, member2);
+
+    if (__.hasValue(val1) && __.hasValue(val2)) {
+      val1 = parseInt(val1);
+      val2 = parseInt(val2);
+      if (isNaN(val1) || isNaN(val2)) {
+        return this._handleCallback(callback, null, messages.noint);
+      }
+
+      let point1 = geohash.decode_int(val1);
+      let point2 = geohash.decode_int(val2);
+      let dist = geolib.getDistance(
+        {
+          latitude: point1.latitude,
+          longitude: point1.longitude
+        },
+        {
+          latitude: point2.latitude,
+          longitude: point2.longitude
+        }
+      );
+
+      retVal = this._convertDistance(dist, conversion);
+    }
+
+    return this._handleCallback(callback, retVal);
   }
 
-  geohash(...params) {
-    this._unsupported();
+  geohash(key, ...members) {
+    let retVal = [];
+    const callback = this._retrieveCallback(members);
+    if (members.length < 1) {
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'geohash'));
+    }
+
+    let val, point;
+    while (0 < members.length) {
+      let member = members.shift();
+      try {
+        val = this.zscore(key, member);
+        if (__.hasValue(val)) {
+          point = geohash.decode_int(val);
+          retVal.push(geohash.encode(point.latitude, point.longitude));
+        } else {
+          retVal.push(null);
+        }
+      } catch (err) {
+        return this._handleCallback(callback, null, err);
+      }
+    }
+
+    return this._handleCallback(callback, retVal);
   }
 
-  geopos(...params) {
-    this._unsupported();
+  geopos(key, ...members) {
+    let retVal = [];
+    const callback = this._retrieveCallback(members);
+    if (members.length < 1) {
+      return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'geopos'));
+    }
+
+    let val, point;
+    while (0 < members.length) {
+      let member = members.shift();
+      try {
+        val = this.zscore(key, member);
+        if (__.hasValue(val)) {
+          point = geohash.decode_int(val);
+          retVal.push( [ point.longitude, point.latitude ] );
+        } else {
+          retVal.push(null);
+        }
+      } catch (err) {
+        return this._handleCallback(callback, null, err);
+      }
+    }
+
+    return this._handleCallback(callback, retVal);
   }
 
   georadius(...params) {
@@ -1301,6 +1422,7 @@ class MemoryCache extends Event {
     let change = false;
     let increment = false;
 
+    params = __.flatten(params);
     const callback = this._retrieveCallback(params);
 
     // Look for the start of score parameters
@@ -2752,6 +2874,26 @@ class MemoryCache extends Event {
     return;
   }
 
+  // ---------------------------------------
+  // ## Internal - Geo ##
+  // ---------------------------------------
+  _convertDistance(dist, conversion) {
+    switch (conversion) {
+      case 'km':
+        dist /= 1000;
+        break;
+      case 'ft':
+        dist *= 3.28084;
+        break;
+      case 'mi':
+        dist /= 1609.344;
+        break;
+      case 'm':
+      default:
+        break;
+    }
+    return dist;
+  }
   // ---------------------------------------
   // ## Internal - Key ##
   // ---------------------------------------
