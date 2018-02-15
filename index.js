@@ -155,7 +155,7 @@ class MemoryCache extends Event {
 
     let long, lat, name;
     const data = [];
-    while (0 < params.length) {
+    while (params.length > 0) {
       long = parseFloat(params.shift());
       lat = parseFloat(params.shift());
       if (isNaN(long) || isNaN(lat)) {
@@ -234,7 +234,7 @@ class MemoryCache extends Event {
     }
 
     let val, point;
-    while (0 < members.length) {
+    while (members.length > 0) {
       let member = members.shift();
       try {
         val = this.zscore(key, member);
@@ -260,13 +260,13 @@ class MemoryCache extends Event {
     }
 
     let val, point;
-    while (0 < members.length) {
+    while (members.length > 0) {
       let member = members.shift();
       try {
         val = this.zscore(key, member);
         if (__.hasValue(val)) {
           point = geohash.decode_int(val);
-          retVal.push( [ point.longitude, point.latitude ] );
+          retVal.push([point.longitude, point.latitude]);
         } else {
           retVal.push(null);
         }
@@ -2894,6 +2894,7 @@ class MemoryCache extends Event {
     }
     return dist;
   }
+
   // ---------------------------------------
   // ## Internal - Key ##
   // ---------------------------------------
