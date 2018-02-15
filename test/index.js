@@ -1248,47 +1248,696 @@ describe('Memory Cache', () => {
     });
 
     it('zadd (xx flags)', () => {
-      let val = client.zadd('sortedkey', 'nx', 1.2, 'lame');
+      let val = client.zadd('sortedkey', 'ch', 'xx', 2.0, 'lame');
       expect(val).to.be.equal(1);
       val = client.zscore('sortedkey', 'lame');
-      expect(val).to.be.equal(1.2);
+      expect(val).to.be.equal(2.0);
     });
 
-    it('zadd with callback');
-    it('zcard');
-    it('zcard with callback');
-    it('zcount');
-    it('zcount with callback');
-    it('zincrby');
-    it('zincrby with callback');
-    it('zlexcount');
-    it('zlexcount with callback');
-    it('zrange');
-    it('zrange with callback');
-    it('zrangebylex');
-    it('zrangebylex with callback');
-    it('zrangebyscore');
-    it('zrangebyscore with callback');
-    it('zrank');
-    it('zrank with callback');
-    it('zrem');
-    it('zrem with callback');
-    it('zremrangebylex');
-    it('zremrangebylex with callback');
-    it('zremrangebyrank');
-    it('zremrangebyrank with callback');
-    it('zremrangebyscore');
-    it('zremrangebyscore with callback');
-    it('zrevrange');
-    it('zrevrange with callback');
-    it('zrevrangebylex');
-    it('zrevrangebylex with callback');
-    it('zrevrangebyscore');
-    it('zrevrangebyscore with callback');
-    it('zrevrank');
-    it('zrevrank with callback');
-    it('zscore');
-    it('zscore with callback');
+    it('zadd with callback', (done) => {
+      client.zadd('sortedkey', 1.2, 'lame2', (err, res) => {
+        expect(res).to.be.equal(1);
+        done();
+      });
+    });
+
+    it('zcard (non-existing)', () => {
+      let val = client.zcard('bad');
+      expect(val).to.be.equal(0);
+    });
+
+    it('zcard', () => {
+      let val = client.zcard('sortedkey');
+      expect(val).to.be.equal(2);
+    });
+
+    it('zcard with callback', (done) => {
+      client.zcard('sortedkey', (err, res) => {
+        expect(res).to.be.equal(2);
+        done();
+      });
+    });
+
+    it('zcount (bad range min)', () => {
+      let testfn = () => { client.zcount('sortedkey', '+ad', '2') };
+      expect(testfn).to.throw('float');
+    });
+
+    it('zcount (bad range max)', () => {
+      let testfn = () => { client.zcount('sortedkey', '1', '+ad') };
+      expect(testfn).to.throw('float');
+    });
+
+    it('zcount (reversed order)', () => {
+      let val = client.zcount('sortedkey', '+inf', '-inf');
+      expect(val).to.be.equal(0);
+    });
+
+    it('zcount (exclusive range)', () => {
+      let val = client.zcount('sortedkey', '(1', '(2');
+      expect(val).to.be.equal(1);
+    });
+
+    it('zcount (inclusive range)', () => {
+      let val = client.zcount('sortedkey', '1', '2');
+      expect(val).to.be.equal(2);
+    });
+
+    it('zcount with callback', (done) => {
+      client.zcount('sortedkey', '1', '(2', (err, res) => {
+        expect(res).to.be.equal(1);
+        done();
+      });
+    });
+
+    it('zincrby (bad incr)', () => {
+      let testfn = () => { client.zincrby('sortedkey', 'lame', 'lame2'); }
+      expect(testfn).to.throw('float');
+    });
+
+    it('zincrby (non-existing key)', () => {
+      let val = client.zincrby('sortedkey3', -2.0, 'lame');
+      expect(val).to.be.equal(-2.0);
+      val = client.zcard('sortedkey3');
+      expect(val).to.be.equal(1);
+    });
+
+    it('zincrby (non-existing member)', () => {
+      let val = client.zincrby('sortedkey', -2.0, 'other');
+      expect(val).to.be.equal(-2.0);
+      val = client.zcard('sortedkey');
+      expect(val).to.be.equal(3);
+    });
+
+    it('zincrby', () => {
+      let val = client.zincrby('sortedkey', -0.5, 'lame2');
+      expect(val).to.be.equal(0.7);
+    });
+
+    it('zincrby with callback', (done) => {
+      client.zincrby('sortedkey', 0.5, 'lame2', (err, res) => {
+        expect(res).to.be.equal(1.2);
+        done();
+      });
+    });
+
+    it('zlexcount (bad range start)', () => {
+      let testfn = () => { client.zlexcount('sortedkey', 'd', '[a') };
+      expect(testfn).to.throw('not valid string');
+    });
+
+    it('zlexcount (bad range end)', () => {
+      let testfn = () => { client.zlexcount('sortedkey', '[a', 'a') };
+      expect(testfn).to.throw('not valid string');
+    });
+
+    it('zlexcount (reversed order)', () => {
+      let val = client.zlexcount('sortedkey', '+', '-');
+      expect(val).to.be.equal(0);
+    });
+
+    it('zlexcount (all)', () => {
+      let val = client.zlexcount('sortedkey', '-', '+');
+      expect(val).to.be.equal(3);
+    });
+
+    it('zlexcount (exclusive range)', () => {
+      let val = client.zlexcount('sortedkey', '(l', '(other');
+      expect(val).to.be.equal(2);
+    });
+
+    it('zlexcount (inclusive range)', () => {
+      let val = client.zlexcount('sortedkey', '[l', '[p');
+      expect(val).to.be.equal(3);
+    });
+
+    it('zlexcount with callback', (done) => {
+      client.zlexcount('sortedkey', '[1', '[p', (err, res) => {
+        expect(res).to.be.equal(3);
+        done();
+      });
+    });
+
+    it('zrange (bad range start)', () => {
+      let testfn = () => { client.zrange('sortedkey', 'd', 2) };
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrange (bad range end)', () => {
+      let testfn = () => { client.zrange('sortedkey', 1, 'd') };
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrange (bad params)', () => {
+      let testfn = () => { client.zrange('sortedkey', 1, 2, 'lame') };
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrange (reverse range)', () => {
+      let val = client.zrange('sortedkey', 2, 1);
+      expect(val).to.be.empty;
+    });
+
+    it('zrange (all)', () => {
+      let val = client.zrange('sortedkey', 0, -1);
+      expect(val.length).to.be.equal(3);
+      expect(val[0]).to.be.equal('other');
+      expect(val[2]).to.be.equal('lame');
+    });
+
+    it('zrange', () => {
+      let val = client.zrange('sortedkey', -3, -2);
+      expect(val.length).to.be.equal(2);
+      expect(val[0]).to.be.equal('other');
+      expect(val[1]).to.be.equal('lame2');
+    });
+
+    it('zrange (with scores)', () => {
+      let val = client.zrange('sortedkey', 0, 1, "withscores");
+      expect(val.length).to.be.equal(4);
+      expect(val[0]).to.be.equal('other');
+      expect(val[2]).to.be.equal('lame2');
+    });
+
+    it('zrange with callback', (done) => {
+      client.zrange('sortedkey', 0, 1, (err, res) => {
+        expect(res.length).to.be.equal(2);
+        expect(res[0]).to.be.equal('other');
+        expect(res[1]).to.be.equal('lame2');
+        done();
+      });
+    });
+
+    it('zrangebylex (bad start range)', () => {
+      let testfn = () => { client.zrangebylex('sortedkey', 'd', '[a'); }
+      expect(testfn).to.throw('not valid string');
+    });
+
+    it('zrangebylex (bad end range)', () => {
+      let testfn = () => { client.zrangebylex('sortedkey', '[d', 'a'); }
+      expect(testfn).to.throw('not valid string');
+    });
+
+    it('zrangebylex (bad params)', () => {
+      let testfn = () => { client.zrangebylex('sortedkey', '[d', '[a', 'lame'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrangebylex (bad limit -- too few)', () => {
+      let testfn = () => { client.zrangebylex('sortedkey', '[d', '[a', 'limit'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrangebylex (bad limit -- too many)', () => {
+      let testfn = () => { client.zrangebylex('sortedkey', '[d', '[a', 'limit', 1, 2, 'sick'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrangebylex (bad limit offset)', () => {
+      let testfn = () => { client.zrangebylex('sortedkey', '[d', '[a', 'limit', 'a', 2); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrangebylex (bad limit count)', () => {
+      let testfn = () => { client.zrangebylex('sortedkey', '[d', '[a', 'limit', 1, 'a'); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrangebylex (reverse order)', () => {
+      let val = client.zrangebylex('sortedkey', '+', '-');
+      expect(val).to.be.empty;
+    });
+
+    it('zrangebylex (all)', () => {
+      let val = client.zrangebylex('sortedkey', '-', '+');
+      expect(val.length).to.be.equal(3);
+      expect(val[0]).to.be.equal('lame');
+      expect(val[2]).to.be.equal('other');
+    });
+
+    it('zrangebylex (all with limit)', () => {
+      let val = client.zrangebylex('sortedkey', '-', '+', 'limit', 1, 2);
+      expect(val.length).to.be.equal(2);
+      expect(val[0]).to.be.equal('lame2');
+      expect(val[1]).to.be.equal('other');
+    });
+
+    it('zrangebylex (exclusive range)', () => {
+      let val = client.zrangebylex('sortedkey', '(l', '(other');
+      expect(val.length).to.be.equal(2);
+      expect(val[0]).to.be.equal('lame');
+      expect(val[1]).to.be.equal('lame2');
+    });
+
+    it('zrangebylex (inclusive range)', () => {
+      let val = client.zrangebylex('sortedkey', '[l', '[p');
+      expect(val.length).to.be.equal(3);
+      expect(val[0]).to.be.equal('lame');
+      expect(val[2]).to.be.equal('other');
+    });
+
+    it('zrangebylex with callback', (done) => {
+      client.zrangebylex('sortedkey', '[l', '[p', (err, res) => {
+        expect(res.length).to.be.equal(3);
+        expect(res[0]).to.be.equal('lame');
+        expect(res[2]).to.be.equal('other');
+        done();
+      });
+    });
+
+    it('zrangebyscore (bad start range)', () => {
+      let testfn = () => { client.zrangebyscore('sortedkey', 'd', 2.0); }
+      expect(testfn).to.throw('float');
+    });
+
+    it('zrangebyscore (bad end range)', () => {
+      let testfn = () => { client.zrangebyscore('sortedkey', 1.0, 'a'); }
+      expect(testfn).to.throw('float');
+    });
+
+    it('zrangebyscore (bad params)', () => {
+      let testfn = () => { client.zrangebyscore('sortedkey', 1.0, 2.0, 'lame'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrangebyscore (bad limit -- too many)', () => {
+      let testfn = () => { client.zrangebyscore('sortedkey', 1.0, 2.0, 'limit', 1, 2, 'all'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('zrangebyscore (bad limit -- too few)', () => {
+      let testfn = () => { client.zrangebyscore('sortedkey', 1.0, 2.0, 'limit'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('zrangebyscore (bad limit offset)', () => {
+      let testfn = () => { client.zrangebyscore('sortedkey', 1.0, 2.0, 'limit', 'a', 2); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrangebyscore (bad limit count)', () => {
+      let testfn = () => { client.zrangebyscore('sortedkey', 1.0, 2.0, 'limit', 1, 'a'); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrangebyscore (reverse order)', () => {
+      let val = client.zrangebyscore('sortedkey', '+inf', '-inf');
+      expect(val).to.be.empty;
+    });
+
+    it('zrangebyscore (all)', () => {
+      let val = client.zrangebyscore('sortedkey', '-inf', '+inf');
+      expect(val.length).to.be.equal(3);
+      expect(val[0]).to.be.equal('other');
+      expect(val[2]).to.be.equal('lame');
+    });
+
+    it('zrangebyscore (all with limit)', () => {
+      let val = client.zrangebyscore('sortedkey', '-inf', '+inf', 'limit', 1, 2);
+      expect(val.length).to.be.equal(2);
+      expect(val[0]).to.be.equal('lame2');
+      expect(val[1]).to.be.equal('lame');
+    });
+
+    it('zrangebyscore (exclusive range)', () => {
+      let val = client.zrangebyscore('sortedkey', '(1.0', '(2.0');
+      expect(val.length).to.be.equal(1);
+      expect(val[0]).to.be.equal('lame2');
+    });
+
+    it('zrangebyscore (inclusive range)', () => {
+      let val = client.zrangebyscore('sortedkey', '1.0', '2.0');
+      expect(val.length).to.be.equal(2);
+      expect(val[0]).to.be.equal('lame2');
+      expect(val[1]).to.be.equal('lame');
+    });
+
+    it('zrangebyscore with callback', (done) => {
+      client.zrangebyscore('sortedkey', '1.0', '2.0', (err, res) => {
+        expect(res.length).to.be.equal(2);
+        expect(res[0]).to.be.equal('lame2');
+        expect(res[1]).to.be.equal('lame');
+        done(0);
+      });
+    });
+
+    it('zrank (non-existing key)', () => {
+      let val = client.zrank('bad', 'll');
+      expect(val).to.be.equal(null);
+    });
+
+    it('zrank (non-existing member)', () => {
+      let val = client.zrank('sortedkey', 'll');
+      expect(val).to.be.equal(null);
+    });
+
+    it('zrank', () => {
+      let val = client.zrank('sortedkey', 'other');
+      expect(val).to.be.equal(0);
+    });
+
+    it('zrank with callback', (done) => {
+      client.zrank('sortedkey', 'lame', (err, res) => {
+        expect(res).to.be.equal(2);
+        done();
+      });
+    });
+
+    it('zrevrange (bad range start)', () => {
+      let testfn = () => { client.zrevrange('sortedkey', 'd', 2) };
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrevrange (bad range end)', () => {
+      let testfn = () => { client.zrevrange('sortedkey', 1, 'd') };
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrevrange (bad params)', () => {
+      let testfn = () => { client.zrevrange('sortedkey', 1, 2, 'lame') };
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrevrange (reverse range)', () => {
+      let val = client.zrevrange('sortedkey', 2, 1);
+      expect(val).to.be.empty;
+    });
+
+    it('zrevrange (all)', () => {
+      let val = client.zrevrange('sortedkey', 0, -1);
+      expect(val.length).to.be.equal(3);
+      expect(val[0]).to.be.equal('lame');
+      expect(val[2]).to.be.equal('other');
+    });
+
+    it('zrevrange', () => {
+      let val = client.zrevrange('sortedkey', -3, -2);
+      expect(val.length).to.be.equal(2);
+      expect(val[0]).to.be.equal('lame');
+      expect(val[1]).to.be.equal('lame2');
+    });
+
+    it('zrevrange (with scores)', () => {
+      let val = client.zrevrange('sortedkey', 0, 1, "withscores");
+      expect(val.length).to.be.equal(4);
+      expect(val[0]).to.be.equal('lame');
+      expect(val[2]).to.be.equal('lame2');
+    });
+
+    it('zrevrange with callback', (done) => {
+      client.zrevrange('sortedkey', 0, 1, (err, res) => {
+        expect(res.length).to.be.equal(2);
+        expect(res[0]).to.be.equal('lame');
+        expect(res[1]).to.be.equal('lame2');
+        done();
+      });
+    });
+
+    it('zrevrangebylex (bad start range)', () => {
+      let testfn = () => { client.zrevrangebylex('sortedkey', 'd', '[a'); }
+      expect(testfn).to.throw('not valid string');
+    });
+
+    it('zrevrangebylex (bad end range)', () => {
+      let testfn = () => { client.zrevrangebylex('sortedkey', '[d', 'a'); }
+      expect(testfn).to.throw('not valid string');
+    });
+
+    it('zrevrangebylex (bad params)', () => {
+      let testfn = () => { client.zrevrangebylex('sortedkey', '[d', '[a', 'lame'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrevrangebylex (bad limit -- too few)', () => {
+      let testfn = () => { client.zrevrangebylex('sortedkey', '[d', '[a', 'limit'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrevrangebylex (bad limit -- too many)', () => {
+      let testfn = () => { client.zrevrangebylex('sortedkey', '[d', '[a', 'limit', 1, 2, 'sick'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrevrangebylex (bad limit offset)', () => {
+      let testfn = () => { client.zrevrangebylex('sortedkey', '[d', '[a', 'limit', 'a', 2); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrevrangebylex (bad limit count)', () => {
+      let testfn = () => { client.zrevrangebylex('sortedkey', '[d', '[a', 'limit', 1, 'a'); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrevrangebylex (reverse order)', () => {
+      let val = client.zrevrangebylex('sortedkey', '-', '+');
+      expect(val).to.be.empty;
+    });
+
+    it('zrevrangebylex (all)', () => {
+      let val = client.zrevrangebylex('sortedkey', '+', '-');
+      expect(val.length).to.be.equal(3);
+      expect(val[0]).to.be.equal('other');
+      expect(val[2]).to.be.equal('lame');
+    });
+
+    it('zrevrangebylex (all with limit)', () => {
+      let val = client.zrevrangebylex('sortedkey', '+', '-', 'limit', 1, 2);
+      expect(val.length).to.be.equal(2);
+      expect(val[0]).to.be.equal('lame2');
+      expect(val[1]).to.be.equal('lame');
+    });
+
+    it('zrevrangebylex (exclusive range)', () => {
+      let val = client.zrevrangebylex('sortedkey', '(other', '(l');
+      expect(val.length).to.be.equal(2);
+      expect(val[0]).to.be.equal('lame2');
+      expect(val[1]).to.be.equal('lame');
+    });
+
+    it('zrevrangebylex (inclusive range)', () => {
+      let val = client.zrevrangebylex('sortedkey', '[p', '[l');
+      expect(val.length).to.be.equal(3);
+      expect(val[0]).to.be.equal('other');
+      expect(val[2]).to.be.equal('lame');
+    });
+
+    it('zrevrangebylex with callback', (done) => {
+      client.zrevrangebylex('sortedkey', '[p', '[l', (err, res) => {
+        expect(res.length).to.be.equal(3);
+        expect(res[0]).to.be.equal('other');
+        expect(res[2]).to.be.equal('lame');
+        done();
+      });
+    });
+
+    it('zrevrangebyscore (bad start range)', () => {
+      let testfn = () => { client.zrevrangebyscore('sortedkey', 'd', 2.0); }
+      expect(testfn).to.throw('float');
+    });
+
+    it('zrevrangebyscore (bad end range)', () => {
+      let testfn = () => { client.zrevrangebyscore('sortedkey', 1.0, 'a'); }
+      expect(testfn).to.throw('float');
+    });
+
+    it('zrevrangebyscore (bad params)', () => {
+      let testfn = () => { client.zrevrangebyscore('sortedkey', 1.0, 2.0, 'lame'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrevrangebyscore (bad limit -- too many)', () => {
+      let testfn = () => { client.zrevrangebyscore('sortedkey', 1.0, 2.0, 'limit', 1, 2, 'all'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('zrevrangebyscore (bad limit -- too few)', () => {
+      let testfn = () => { client.zrevrangebyscore('sortedkey', 1.0, 2.0, 'limit'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('zrevrangebyscore (bad limit offset)', () => {
+      let testfn = () => { client.zrevrangebyscore('sortedkey', 1.0, 2.0, 'limit', 'a', 2); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrevrangebyscore (bad limit count)', () => {
+      let testfn = () => { client.zrevrangebyscore('sortedkey', 1.0, 2.0, 'limit', 1, 'a'); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('zrevrangebyscore (reverse order)', () => {
+      let val = client.zrevrangebyscore('sortedkey', '-inf', '+inf');
+      expect(val).to.be.empty;
+    });
+
+    it('zrevrangebyscore (all)', () => {
+      let val = client.zrevrangebyscore('sortedkey', '+inf', '-inf');
+      expect(val.length).to.be.equal(3);
+      expect(val[0]).to.be.equal('lame');
+      expect(val[2]).to.be.equal('other');
+    });
+
+    it('zrevrangebyscore (all with limit)', () => {
+      let val = client.zrevrangebyscore('sortedkey', '+inf', '-inf', 'limit', 1, 2);
+      expect(val.length).to.be.equal(2);
+      expect(val[0]).to.be.equal('lame2');
+      expect(val[1]).to.be.equal('other');
+    });
+
+    it('zrevrangebyscore (exclusive range)', () => {
+      let val = client.zrevrangebyscore('sortedkey', '(2.0', '(1.0');
+      expect(val.length).to.be.equal(1);
+      expect(val[0]).to.be.equal('lame2');
+    });
+
+    it('zrevrangebyscore (inclusive range)', () => {
+      let val = client.zrevrangebyscore('sortedkey', '2.0', '1.0');
+      expect(val.length).to.be.equal(2);
+      expect(val[0]).to.be.equal('lame');
+      expect(val[1]).to.be.equal('lame2');
+    });
+
+    it('zrevrangebyscore with callback', (done) => {
+      client.zrevrangebyscore('sortedkey', '2.0', '1.0', (err, res) => {
+        expect(res.length).to.be.equal(2);
+        expect(res[0]).to.be.equal('lame');
+        expect(res[1]).to.be.equal('lame2');
+        done(0);
+      });
+    });
+
+    it('zrevrank (non-existing key)', () => {
+      let val = client.zrevrank('bad', 'll');
+      expect(val).to.be.equal(null);
+    });
+
+    it('zrevrank (non-existing member)', () => {
+      let val = client.zrevrank('sortedkey', 'll');
+      expect(val).to.be.equal(null);
+    });
+
+    it('zrevrank', () => {
+      let val = client.zrevrank('sortedkey', 'other');
+      expect(val).to.be.equal(2);
+    });
+
+    it('zrevrank with callback', (done) => {
+      client.zrevrank('sortedkey', 'lame', (err, res) => {
+        expect(res).to.be.equal(0);
+        done();
+      });
+    });
+
+    it('zscore (non-existing key)', () => {
+      let val = client.zscore('bad', 'll');
+      expect(val).to.be.equal(null);
+    });
+
+    it('zscore (non-existing member)', () => {
+      let val = client.zscore('sortedkey', 'll');
+      expect(val).to.be.equal(null);
+    });
+
+    it('zscore', () => {
+      let val = client.zscore('sortedkey', 'other');
+      expect(val).to.be.equal(-2);
+    });
+
+    it('zscore with callback', (done) => {
+      client.zscore('sortedkey', 'lame', (err, res) => {
+        expect(res).to.be.equal(2);
+        done();
+      });
+    });
+
+    it('zrem (non-existing key)', () => {
+      let val = client.zrem('bad', 'll');
+      expect(val).to.be.equal(0);
+    });
+
+    it('zrem', () => {
+      client.zadd('sortedkey', 3, 'fantastic');
+      client.zadd('sortedkey', 4, 'beautiful');
+      client.zadd('sortedkey', 5, 'good');
+      client.zadd('sortedkey', 6, 'great');
+      let val = client.zrem('sortedkey', 'okay', 'fantastic', 'beautiful', 'good', 'great');
+      expect(val).to.be.equal(4);
+    });
+
+    it('zrem with callback', (done) => {
+      client.zadd('sortedkey', 3, 'fantastic');
+      client.zadd('sortedkey', 4, 'beautiful');
+      client.zadd('sortedkey', 5, 'good');
+      client.zadd('sortedkey', 6, 'great');
+      client.zrem('sortedkey', 'okay', 'fantastic', 'beautiful', 'good', 'great', (err, res) => {
+        expect(res).to.be.equal(4);
+        done();
+      });
+    });
+
+    it('zremrangebylex', () => {
+      client.zadd('sortedkey', 3, 'fantastic');
+      client.zadd('sortedkey', 4, 'beautiful');
+      client.zadd('sortedkey', 5, 'good');
+      client.zadd('sortedkey', 6, 'great');
+      let val = client.zremrangebylex('sortedkey', '(f', '(gz');
+      expect(val).to.be.equal(3);
+    });
+
+    it('zremrangebylex with callback', (done) => {
+      client.zadd('sortedkey', 3, 'fantastic');
+      client.zadd('sortedkey', 4, 'beautiful');
+      client.zadd('sortedkey', 5, 'good');
+      client.zadd('sortedkey', 6, 'great');
+      let val = client.zremrangebylex('sortedkey', '(f', '(gz', (err, res) => {
+        expect(res).to.be.equal(3);
+        done();
+      });
+    });
+
+    it('zremrangebyrank', () => {
+      client.zadd('sortedkey', 3, 'fantastic');
+      client.zadd('sortedkey', 4, 'beautiful');
+      client.zadd('sortedkey', 5, 'good');
+      client.zadd('sortedkey', 6, 'great');
+      let val = client.zremrangebyrank('sortedkey', -2, -1);
+      expect(val).to.be.equal(2);
+      val = client.zrange('sortedkey', 0, -1);
+      expect(val).to.not.include.members(['good', 'great']);
+    });
+
+    it('zremrangebyrank with callback', (done) => {
+      client.zadd('sortedkey', 3, 'fantastic');
+      client.zadd('sortedkey', 4, 'beautiful');
+      client.zadd('sortedkey', 5, 'good');
+      client.zadd('sortedkey', 6, 'great');
+      client.zremrangebyrank('sortedkey', -2, -1, (err, res) => {
+        expect(res).to.be.equal(2);
+        val = client.zrange('sortedkey', 0, -1);
+        expect(val).to.not.include.members(['good', 'great']);
+        done();
+      });
+    });
+
+    it('zremrangebyscore', () => {
+      client.zadd('sortedkey', 3, 'fantastic');
+      client.zadd('sortedkey', 4, 'beautiful');
+      client.zadd('sortedkey', 5, 'good');
+      client.zadd('sortedkey', 6, 'great');
+      let val = client.zremrangebyscore('sortedkey', '4', '6');
+      expect(val).to.be.equal(3);
+    });
+
+    it('zremrangebyscore with callback', (done) => {
+      client.zadd('sortedkey', 3, 'fantastic');
+      client.zadd('sortedkey', 4, 'beautiful');
+      client.zadd('sortedkey', 5, 'good');
+      client.zadd('sortedkey', 6, 'great');
+      client.zremrangebyscore('sortedkey', '4', '6', (err, res) => {
+        expect(res).to.be.equal(3);
+        done();
+      });
+    });
   });
 
   describe('Strings', () => {
@@ -2253,6 +2902,13 @@ describe('Memory Cache', () => {
     it('watch', () => {
       const testfn = () => { client.watch(); };
       expect(testfn).to.throw(MemoryCacheError);
+    });
+  });
+
+  describe('Internal Methods', () => {
+    it('_strbit with bad or missing operator', () => {
+      let val = client._strbit('', ['moo', 'cat']);
+      expect(val).to.be.equal('moo');
     });
   });
 });

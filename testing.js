@@ -1,14 +1,27 @@
 const MemoryCache = require('.');
 const memCache = new MemoryCache();
 
+let v;
+
 memCache.createClient();
 
-memCache.multi();
-let v = memCache.set('bitop1', '\u0000');
-memCache.set('bitop2', '\u0001');
-memCache.set('bitop3', '\u0002');
-memCache.set('bitop4', '\u0003');
-memCache.exec();
+memCache.zadd('sortedkey', '2', 'lame', '1.2', 'lame2', '-2', 'other');
+memCache.zadd('sortedkey', 3, 'fantastic');
+memCache.zadd('sortedkey', 4, 'beautiful');
+memCache.zadd('sortedkey', 5, 'good');
+memCache.zadd('sortedkey', 6, 'great');
+v = memCache.zremrangebylex('sortedkey', '(f', '(gz');
 
-const val = memCache.bitop('and', 'bitop', 'bitop3', 'bitop4');
-console.log(val);
+memCache.zadd('sortedkey', 3, 'fantastic');
+memCache.zadd('sortedkey', 4, 'beautiful');
+memCache.zadd('sortedkey', 5, 'good');
+memCache.zadd('sortedkey', 6, 'great');
+v = memCache.zremrangebyrank('sortedkey', -2, -1);
+
+memCache.zadd('sortedkey', 3, 'fantastic');
+memCache.zadd('sortedkey', 4, 'beautiful');
+memCache.zadd('sortedkey', 5, 'good');
+memCache.zadd('sortedkey', 6, 'great');
+v = memCache.zremrangebyscore('sortedkey', '4', '6');
+
+console.log(v);

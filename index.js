@@ -1316,9 +1316,11 @@ class MemoryCache extends Event {
       return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'zadd'));
     }
     const memObj = {};
+
     for (let itr = 0, end = members.length; itr < end; itr += 2) {
       const kn = members[itr + 1];
-      const kv = members[itr];
+      const kv = parseFloat(members[itr]);
+      if (isNaN(kv)) { return this._handleCallback(callback, null, messages.nofloat); }
       memObj[kn] = kv;
     }
 
@@ -1496,9 +1498,27 @@ class MemoryCache extends Event {
     return this._handleCallback(callback, retVal);
   }
 
-  zrange(key, start, stop, withscores, callback) {
+  zrange(key, start, stop, ...params) { // withscores, callback) {
     const retVal = [];
-    withscores = withscores || false;
+    let withscores = false;
+    const callback = this._retrieveCallback(params);
+
+    if (params.length > 0) {
+      if (params.length > 1) {
+        return this._handleCallback(callback, null, messages.syntax);
+      } else if (params[0].toString().toLowerCase() === "withscores") {
+        withscores = true;
+      } else {
+        return this._handleCallback(callback, null, messages.syntax);
+      }
+    }
+
+    start = parseInt(start);
+    stop = parseInt(stop);
+
+    if (isNaN(start) || isNaN(stop)) {
+      return this._handleCallback(callback, null, messages.noint);
+    }
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true, callback);
@@ -1521,7 +1541,9 @@ class MemoryCache extends Event {
         const sorted = __.sortBy(__.toPairs(val), (ob) => {
           return ob[1];
         });
-        for (let itr = start; itr < size; itr++) {
+
+        let len = start + size;
+        for (let itr = start; itr < len; itr++) {
           retVal.push(sorted[itr][0]);
           if (withscores) {
             retVal.push(sorted[itr][1]);
@@ -1546,7 +1568,7 @@ class MemoryCache extends Event {
     // Handle parameters
     if (params.length > 0) {
       limit = true;
-      if (params.length < 2) {
+      if (params.length !== 3) {
         return this._handleCallback(callback, null, messages.syntax);
       }
 
@@ -1554,8 +1576,7 @@ class MemoryCache extends Event {
         offset = parseInt(params[1]);
         count = parseInt(params[2]);
       } else {
-        offset = parseInt(params[0]);
-        count = parseInt(params[1]);
+        return this._handleCallback(callback, null, messages.syntax);
       }
 
       if (isNaN(offset) || isNaN(count)) {
@@ -1606,8 +1627,9 @@ class MemoryCache extends Event {
     }
 
     if (limit) {
+      let len = offset + count;
       const temp = [];
-      for (let itr = offset; itr < count && itr < retVal.length; itr++) {
+      for (let itr = offset; itr < len && itr < retVal.length; itr++) {
         temp.push(retVal[itr]);
       }
       retVal = temp;
@@ -1628,6 +1650,10 @@ class MemoryCache extends Event {
     const mn = this._parseRange(min);
     const mx = this._parseRange(max);
 
+    if (isNaN(mn.range) || isNaN(mx.range)) {
+      return this._handleCallback(callback, null, messages.nofloat);
+    }
+
     // Handle parameters
     if (params.length > 0) {
       if (params.length > 4) {
@@ -1636,17 +1662,28 @@ class MemoryCache extends Event {
       let itr = 0;
       while (itr < params.length) {
         const curr = params.shift();
-        if (itr === 0 && curr.toString().toLowerCase() === 'withscores') {
-          withscores = true;
-        } else if ((itr === 0 || itr === 1) && curr.toString().toLowerCase() === 'limit') {
-          limit = true;
-        } else {
-          offset = curr;
-          count = params.shift();
-          itr++;
-          if (itr < params.length) {
-            return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'zrangebyscore'));
-          }
+        switch (curr.toString().toLowerCase()) {
+          case 'withscores':
+            if (itr !== 0) {
+              return this._handleCallback(callback, null, messages.syntax);
+            }
+            withscores = true;
+            break;
+          case 'limit':
+            if (itr !== 0 && itr !== 1) {
+              return this._handleCallback(callback, null, messages.syntax);
+            }
+            if (params.length !== 2) {
+              return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'zrangebyscore'));
+            }
+            limit = true;
+            offset = parseInt(params.shift());
+            count = parseInt(params.shift());
+            itr += 2;
+            break;
+          default:
+            return this._handleCallback(callback, null, messages.syntax);
+            break;
         }
         itr++;
       }
@@ -1677,7 +1714,8 @@ class MemoryCache extends Event {
     }
 
     if (limit) {
-      for (let itr = offset; itr < count && itr < temp.length; itr++) {
+      let len = offset + count;
+      for (let itr = offset; itr < len && itr < temp.length; itr++) {
         retVal.push(temp[itr][0]);
         if (withscores) {
           retVal.push(temp[itr][1]);
@@ -1721,7 +1759,7 @@ class MemoryCache extends Event {
 
   zrem(key, ...members) {
     let retVal = 0;
-
+    members = __.flatten(members);
     const callback = this._retrieveCallback(members);
 
     if (this._hasKey(key)) {
@@ -1741,8 +1779,12 @@ class MemoryCache extends Event {
   zremrangebylex(key, min, max, callback) {
     let retVal = 0;
     let removeKeys = [];
-    removeKeys = this.zrangebylex(key, min, max);
-    retVal = this.zrem(key, removeKeys);
+    try {
+      removeKeys = this.zrangebylex(key, min, max);
+      retVal = this.zrem(key, removeKeys);
+    } catch (err) {
+      return this._handleCallback(callback, null, err);
+    }
 
     return this._handleCallback(callback, retVal);
   }
@@ -1750,8 +1792,12 @@ class MemoryCache extends Event {
   zremrangebyrank(key, start, stop, callback) {
     let retVal = 0;
     let removeKeys = [];
-    removeKeys = this.zrange(key, start, stop);
-    retVal = this.zrem(key, removeKeys);
+    try {
+      removeKeys = this.zrange(key, start, stop);
+      retVal = this.zrem(key, removeKeys);
+    } catch (err) {
+      return this._handleCallback(callback, null, err);
+    }
 
     return this._handleCallback(callback, retVal);
   }
@@ -1759,15 +1805,38 @@ class MemoryCache extends Event {
   zremrangebyscore(key, min, max, callback) {
     let retVal = 0;
     let removeKeys = [];
-    removeKeys = this.zrangebyscore(key, min, max);
-    retVal = this.zrem(key, removeKeys);
+    try {
+      removeKeys = this.zrangebyscore(key, min, max);
+      retVal = this.zrem(key, removeKeys);
+    } catch (err) {
+      return this._handleCallback(callback, null, err);
+    }
 
     return this._handleCallback(callback, retVal);
   }
 
-  zrevrange(key, start, stop, withscores, callback) {
+  zrevrange(key, start, stop, ...params) { //withscores, callback) {
     const retVal = [];
+    let withscores = false;
+    const callback = this._retrieveCallback(params);
     withscores = withscores || false;
+
+    if (params.length > 0) {
+      if (params.length > 1) {
+        return this._handleCallback(callback, null, messages.syntax);
+      } else if (params[0].toString().toLowerCase() === "withscores") {
+        withscores = true;
+      } else {
+        return this._handleCallback(callback, null, messages.syntax);
+      }
+    }
+
+    start = parseInt(start);
+    stop = parseInt(stop);
+
+    if (isNaN(start) || isNaN(stop)) {
+      return this._handleCallback(callback, null, messages.noint);
+    }
 
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true, callback);
@@ -1790,7 +1859,8 @@ class MemoryCache extends Event {
         const sorted = __.reverse(__.sortBy(__.toPairs(val), (ob) => {
           return ob[1];
         }));
-        for (let itr = start; itr < size; itr++) {
+        let len = start + size;
+        for (let itr = start; itr < len; itr++) {
           retVal.push(sorted[itr][0]);
           if (withscores) {
             retVal.push(sorted[itr][1]);
@@ -1801,7 +1871,7 @@ class MemoryCache extends Event {
     return this._handleCallback(callback, retVal);
   }
 
-  zrevrangebylex(key, min, max, ...params) {
+  zrevrangebylex(key, max, min, ...params) {
     let retVal = [];
     let limit = false;
     let offset;
@@ -1815,16 +1885,15 @@ class MemoryCache extends Event {
     // Handle parameters
     if (params.length > 0) {
       limit = true;
-      if (params.length < 2) {
+      if (params.length !== 3) {
         return this._handleCallback(callback, null, messages.syntax);
       }
 
       if (params[0].toString().toLowerCase() === 'limit') {
         offset = parseInt(params[1]);
         count = parseInt(params[2]);
-      } else {
-        offset = parseInt(params[0]);
-        count = parseInt(params[1]);
+      }  else {
+        return this._handleCallback(callback, null, messages.syntax);
       }
 
       if (isNaN(offset) || isNaN(count)) {
@@ -1835,14 +1904,14 @@ class MemoryCache extends Event {
     if (this._hasKey(key)) {
       this._testType(key, 'zset', true, callback);
       const val = this._getKey(key);
-      const sorted = __.reverse(__.sortBy(
+      const sorted = __.sortBy(
         __.sortBy(__.toPairs(val), (ob) => {
           return ob[1];
         }),
         (ob) => {
           return ob[0];
         }
-      ));
+      );
       let top, bottom, memval;
       for (const memberIndex in sorted) {
         if (sorted.hasOwnProperty(memberIndex)) {
@@ -1874,9 +1943,12 @@ class MemoryCache extends Event {
       }
     }
 
+    retVal = __.reverse(retVal);
+
     if (limit) {
+      let len = offset + count;
       const temp = [];
-      for (let itr = offset; itr < count && itr < retVal.length; itr++) {
+      for (let itr = offset; itr < len && itr < retVal.length; itr++) {
         temp.push(retVal[itr]);
       }
       retVal = temp;
@@ -1885,7 +1957,7 @@ class MemoryCache extends Event {
     return this._handleCallback(callback, retVal);
   }
 
-  zrevrangebyscore(key, min, max, ...params) {
+  zrevrangebyscore(key, max, min, ...params) {
     let retVal = [];
     let withscores = false;
     let limit = false;
@@ -1897,6 +1969,10 @@ class MemoryCache extends Event {
     const mn = this._parseRange(min);
     const mx = this._parseRange(max);
 
+    if (isNaN(mn.range) || isNaN(mx.range)) {
+      return this._handleCallback(callback, null, messages.nofloat);
+    }
+
     // Handle parameters
     if (params.length > 0) {
       if (params.length > 4) {
@@ -1905,17 +1981,28 @@ class MemoryCache extends Event {
       let itr = 0;
       while (itr < params.length) {
         const curr = params.shift();
-        if (itr === 0 && curr.toString().toLowerCase() === 'withscores') {
-          withscores = true;
-        } else if ((itr === 0 || itr === 1) && curr.toString().toLowerCase() === 'limit') {
-          limit = true;
-        } else {
-          offset = curr;
-          count = params.shift();
-          itr++;
-          if (itr < params.length) {
-            return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'zrangebyscore'));
-          }
+        switch (curr.toString().toLowerCase()) {
+          case 'withscores':
+            if (itr !== 0) {
+              return this._handleCallback(callback, null, messages.syntax);
+            }
+            withscores = true;
+            break;
+          case 'limit':
+            if (itr !== 0 && itr !== 1) {
+              return this._handleCallback(callback, null, messages.syntax);
+            }
+            if (params.length !== 2) {
+              return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'zrangebyscore'));
+            }
+            limit = true;
+            offset = parseInt(params.shift());
+            count = parseInt(params.shift());
+            itr += 2;
+            break;
+          default:
+            return this._handleCallback(callback, null, messages.syntax);
+            break;
         }
         itr++;
       }
@@ -1946,7 +2033,8 @@ class MemoryCache extends Event {
     }
 
     if (limit) {
-      for (let itr = offset; itr < count && itr < temp.length; itr++) {
+      let len = offset + count;
+      for (let itr = offset; itr < len && itr < temp.length; itr++) {
         retVal.push(temp[itr][0]);
         if (withscores) {
           retVal.push(temp[itr][1]);
@@ -2571,10 +2659,11 @@ class MemoryCache extends Event {
 
   _parseRange(value) {
     value = value.toString() || '';
-    const excl = value.indexOf('(') !== 0;
-    const adj = excl ? 0 : 1;
+    const excl = value.indexOf('(') === 0;
+    const adj = excl ? 1 : 0;
     const newVal = value.replace(/[Ii]nf$/, 'Infinity');
-    const range = parseFloat(newVal.substr(adj));
+    const newStr = newVal.substr(adj);
+    const range = parseFloat(newStr);
     return { exclusive: excl, range: range };
   }
 
@@ -2583,7 +2672,7 @@ class MemoryCache extends Event {
     if (!value.match(/^[([+-]/)) {
       return this._handleCallback(callback, null, messages.invalidLexRange);
     }
-    const excl = value.indexOf('[') !== 0;
+    const excl = value.indexOf('(') === 0;
     const nothing = value.indexOf('-') === 0 && value.length === 1;
     const everything = value.indexOf('+') === 0 && value.length === 1;
     if (nothing || everything) { value = ''; }
