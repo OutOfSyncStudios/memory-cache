@@ -308,11 +308,11 @@ class MemoryCache extends Event {
   }
 
   hscan(key, cursor, pattern, count, callback) {
-    if (this._hasKey(key)) {
-      this._testType(key, 'hash', true, callback);
-      count = count || 10;
-      pattern = pattern || '*';
-    }
+    // if (this._hasKey(key)) {
+    //   this._testType(key, 'hash', true, callback);
+    //   count = count || 10;
+    //   pattern = pattern || '*';
+    // }
     this._unsupported();
   }
 
@@ -968,11 +968,11 @@ class MemoryCache extends Event {
   }
 
   debug(command, ...params) {
-    switch (command) {
-      default:
-        this._unsupported();
-        break;
-    }
+    this._unsupported();
+    // switch (command) {
+    //   default:
+    //     break;
+    // }
   }
 
   flushall(...params) {
@@ -1666,23 +1666,14 @@ class MemoryCache extends Event {
 
     // Handle parameters
     if (params.length > 0) {
-      if (params.length > 4) {
-        return this._handleCallback(callback, null, messages.syntax);
-      }
       let itr = 0;
       while (itr < params.length) {
         const curr = params.shift();
         switch (curr.toString().toLowerCase()) {
           case 'withscores':
-            if (itr !== 0) {
-              return this._handleCallback(callback, null, messages.syntax);
-            }
             withscores = true;
             break;
           case 'limit':
-            if (itr !== 0 && itr !== 1) {
-              return this._handleCallback(callback, null, messages.syntax);
-            }
             if (params.length !== 2) {
               return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'zrangebyscore'));
             }
@@ -1693,7 +1684,6 @@ class MemoryCache extends Event {
             break;
           default:
             return this._handleCallback(callback, null, messages.syntax);
-            break;
         }
         itr++;
       }
@@ -1902,7 +1892,7 @@ class MemoryCache extends Event {
       if (params[0].toString().toLowerCase() === 'limit') {
         offset = parseInt(params[1]);
         count = parseInt(params[2]);
-      }  else {
+      } else {
         return this._handleCallback(callback, null, messages.syntax);
       }
 
@@ -1985,23 +1975,14 @@ class MemoryCache extends Event {
 
     // Handle parameters
     if (params.length > 0) {
-      if (params.length > 4) {
-        return this._handleCallback(callback, null, messages.syntax);
-      }
       let itr = 0;
       while (itr < params.length) {
         const curr = params.shift();
         switch (curr.toString().toLowerCase()) {
           case 'withscores':
-            if (itr !== 0) {
-              return this._handleCallback(callback, null, messages.syntax);
-            }
             withscores = true;
             break;
           case 'limit':
-            if (itr !== 0 && itr !== 1) {
-              return this._handleCallback(callback, null, messages.syntax);
-            }
             if (params.length !== 2) {
               return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'zrangebyscore'));
             }
@@ -2012,7 +1993,6 @@ class MemoryCache extends Event {
             break;
           default:
             return this._handleCallback(callback, null, messages.syntax);
-            break;
         }
         itr++;
       }
@@ -2354,10 +2334,16 @@ class MemoryCache extends Event {
 
   incrbyfloat(key, amount, callback) {
     let keyValue = 0.0;
+    amount = parseFloat(amount);
+
+    if (isNaN(amount)) {
+      return this._handleCallback(callback, null, messages.nofloat);
+    }
+
     if (this._hasKey(key)) {
       this._testType(key, 'string', true, callback);
       keyValue = parseFloat(this._getKey(key));
-      if (isNaN(keyValue) || __.isUnset(keyValue)) {
+      if (isNaN(keyValue)) {
         return this._handleCallback(callback, null, messages.nofloat);
       }
     } else {
@@ -2504,7 +2490,7 @@ class MemoryCache extends Event {
 
   setbit(key, offset, value, callback) {
     value &= 1;
-    let getVal = '';
+    let getVal = null;
     const byteoffset = Math.floor(offset / 16);
     const bitoffset = offset % 16;
 
@@ -2565,7 +2551,7 @@ class MemoryCache extends Event {
   setrange(key, offset, value, callback) {
     let beginning = '';
     let end = '';
-    let getVal = ''
+    let getVal = null;
     if (this._hasKey(key)) {
       this._testType(key, 'string', true, callback);
       getVal = this._getKey(key);

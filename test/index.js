@@ -51,12 +51,36 @@ describe('Memory Cache', () => {
       });
     });
 
+    it('ping', () => {
+      expect(client.ping('message')).to.equal('message');
+    });
+
+    it('ping (no message)', () => {
+      expect(client.ping()).to.equal('PONG');
+    });
+
+    it('ping with callback', (done) => {
+      client.ping('message', (err, res) => {
+        expect(res).to.equal('message');
+        done();
+      });
+    });
+
     it('quit', (done) => {
       client.once('end', () => {
         expect(client.connected).to.equal(false);
         done();
       });
       client.quit();
+    });
+
+    it('end', (done) => {
+      client.createClient();
+      client.once('end', () => {
+        expect(client.connected).to.equal(false);
+        done();
+      });
+      client.end();
     });
   });
 
@@ -82,7 +106,12 @@ describe('Memory Cache', () => {
       });
     });
 
-    it('hsetnx (non-existing)', () => {
+    it('hsetnx (non-existing key)', () => {
+      const val = client.hsetnx('testkeyA', 'testfield', 0);
+      expect(val).to.equal(1);
+    });
+
+    it('hsetnx (non-existing field)', () => {
       const val = client.hsetnx('testkey', 'testfield3', 0);
       expect(val).to.equal(1);
     });
@@ -283,6 +312,21 @@ describe('Memory Cache', () => {
       });
     });
 
+    it('hmset (no params)', () => {
+      const testfn = () => { client.hmset('testkey2'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('hmset (bad param count multi-field object)', () => {
+      const testfn = () => { client.hmset('testkey2', { x: '123' }, 'x'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('hmset (bad field-value pairs)', () => {
+      const testfn = () => { client.hmset('testkey2', 'x', '123', 'r'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
     it('hmset multi-field object (non-exist key)', () => {
       const val = client.hmset('testkey2', { a: 'a', b: 'b', c: 'c' });
       expect(val).to.be.equal('OK');
@@ -464,6 +508,11 @@ describe('Memory Cache', () => {
         expect(res).to.include.members(['testkey']);
         done();
       });
+    });
+
+    it('move (bad dbindex)', () => {
+      const testfn = () => { client.move('test', 'lame'); }
+      expect(testfn).to.throw('invalid DB index');
     });
 
     it('move (non-existing)', () => {
@@ -845,14 +894,14 @@ describe('Memory Cache', () => {
     });
 
     it('lrange', () => {
-      let val = client.lrange('listkey', 0, -1);
+      let val = client.lrange('listkey', -4, -1);
       expect(val.length).to.be.equal(4);
       expect(val).to.include.members(['uvw', '1', '12', 'abc']);
     });
 
     it('lrange with callback', (done) => {
-      client.lrange('listkey', 0, 1, (err, res) => {
-        expect(res.length).to.be.equal(2);
+      client.lrange('listkey', -100, 100, (err, res) => {
+        expect(res.length).to.be.equal(4);
         expect(res).to.include.members(['uvw','abc']);
         done();
       });
@@ -905,6 +954,11 @@ describe('Memory Cache', () => {
         expect(res).to.be.equal('OK');
         done();
       });
+    });
+
+    it('rpush (non-existing)', () => {
+      let val = client.rpush('listkey3', 'abc');
+      expect(val).to.be.equal(1);
     });
 
     it('rpush', () => {
@@ -976,6 +1030,11 @@ describe('Memory Cache', () => {
       });
     });
 
+    it('ltrim (index out of range)', () => {
+      let testfn = () => { client.ltrim('listkey', 1000, 1); }
+      expect(testfn).to.throw('out of range');
+    });
+
     it('ltrim (non-existing)', () => {
       let val = client.ltrim('bad', 1, 1);
       expect(val).to.be.equal('OK');
@@ -983,7 +1042,7 @@ describe('Memory Cache', () => {
 
     it('ltrim', () => {
       client.rpush('listkey', '111');
-      let val = client.ltrim('listkey', 2, -2);
+      let val = client.ltrim('listkey', -4, -2);
       expect(val).to.be.equal('OK');
       val = client.llen('listkey');
       expect(val).to.be.equal(3);
@@ -993,10 +1052,10 @@ describe('Memory Cache', () => {
     it('ltrim with callback', (done) => {
       client.lpush('listkey', '111');
       client.rpush('listkey', '111');
-      client.ltrim('listkey', 1, -2, (err, res) => {
+      client.ltrim('listkey', 1, 100, (err, res) => {
         expect(res).to.be.equal('OK');
         let val = client.llen('listkey');
-        expect(val).to.be.equal(3);
+        expect(val).to.be.equal(4);
         expect(client.cache['listkey'].value).to.include.members(['abc', 'def', 'ghi']);
         done();
       });
@@ -1173,6 +1232,11 @@ describe('Memory Cache', () => {
       });
     });
 
+    it('spop (bad count)', () => {
+      let testfn = () => { client.spop('setkey', 'ggg'); }
+      expect(testfn).to.throw('integer');
+    });
+
     it('spop (non-existing)', () => {
       let val = client.spop('bad');
       expect(val).to.be.equal(null);
@@ -1188,6 +1252,11 @@ describe('Memory Cache', () => {
         expect(res.length).to.be.equal(1);
         done();
       });
+    });
+
+    it('srandmember (bad count)', () => {
+      let testfn = () => { client.srandmember('setkey', 'ggg'); }
+      expect(testfn).to.throw('integer');
     });
 
     it('srandmember (non-existing)', () => {
@@ -1256,6 +1325,11 @@ describe('Memory Cache', () => {
       expect(testfn).to.throw('XX and NX');
     });
 
+    it('zadd (bad flags [unknown])', () => {
+      let testfn = () => { client.zadd('sortedkey', 'ccc', 1.2, 'value'); }
+      expect(testfn).to.throw('syntax');
+    });
+
     it('zadd', () => {
       let val = client.zadd('sortedkey', 1.2, 'lame');
       expect(val).to.be.equal(1);
@@ -1305,12 +1379,12 @@ describe('Memory Cache', () => {
     });
 
     it('zcount (bad range min)', () => {
-      let testfn = () => { client.zcount('sortedkey', '+ad', '2') };
+      let testfn = () => { client.zcount('sortedkey', '+ad', '2'); }
       expect(testfn).to.throw('float');
     });
 
     it('zcount (bad range max)', () => {
-      let testfn = () => { client.zcount('sortedkey', '1', '+ad') };
+      let testfn = () => { client.zcount('sortedkey', '1', '+ad'); }
       expect(testfn).to.throw('float');
     });
 
@@ -1368,12 +1442,12 @@ describe('Memory Cache', () => {
     });
 
     it('zlexcount (bad range start)', () => {
-      let testfn = () => { client.zlexcount('sortedkey', 'd', '[a') };
+      let testfn = () => { client.zlexcount('sortedkey', 'd', '[a'); }
       expect(testfn).to.throw('not valid string');
     });
 
     it('zlexcount (bad range end)', () => {
-      let testfn = () => { client.zlexcount('sortedkey', '[a', 'a') };
+      let testfn = () => { client.zlexcount('sortedkey', '[a', 'a'); }
       expect(testfn).to.throw('not valid string');
     });
 
@@ -1404,18 +1478,23 @@ describe('Memory Cache', () => {
       });
     });
 
+    it('zrange (bad parameter count)', () => {
+      let testfn = () => { client.zrange('sortedkey', 'd', 2, 'lame', 'lame'); }
+      expect(testfn).to.throw('syntax');
+    });
+
     it('zrange (bad range start)', () => {
-      let testfn = () => { client.zrange('sortedkey', 'd', 2) };
+      let testfn = () => { client.zrange('sortedkey', 'd', 2); }
       expect(testfn).to.throw('integer');
     });
 
     it('zrange (bad range end)', () => {
-      let testfn = () => { client.zrange('sortedkey', 1, 'd') };
+      let testfn = () => { client.zrange('sortedkey', 1, 'd'); }
       expect(testfn).to.throw('integer');
     });
 
     it('zrange (bad params)', () => {
-      let testfn = () => { client.zrange('sortedkey', 1, 2, 'lame') };
+      let testfn = () => { client.zrange('sortedkey', 1, 2, 'lame'); }
       expect(testfn).to.throw('syntax');
     });
 
@@ -1425,7 +1504,7 @@ describe('Memory Cache', () => {
     });
 
     it('zrange (all)', () => {
-      let val = client.zrange('sortedkey', 0, -1);
+      let val = client.zrange('sortedkey', 0, 100);
       expect(val.length).to.be.equal(3);
       expect(val[0]).to.be.equal('other');
       expect(val[2]).to.be.equal('lame');
@@ -1439,7 +1518,7 @@ describe('Memory Cache', () => {
     });
 
     it('zrange (with scores)', () => {
-      let val = client.zrange('sortedkey', 0, 1, "withscores");
+      let val = client.zrange('sortedkey', -100, 1, "withscores");
       expect(val.length).to.be.equal(4);
       expect(val[0]).to.be.equal('other');
       expect(val[2]).to.be.equal('lame2');
@@ -1464,8 +1543,13 @@ describe('Memory Cache', () => {
       expect(testfn).to.throw('not valid string');
     });
 
-    it('zrangebylex (bad params)', () => {
+    it('zrevrangebylex (bad params count)', () => {
       let testfn = () => { client.zrangebylex('sortedkey', '[d', '[a', 'lame'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrangebylex (bad params)', () => {
+      let testfn = () => { client.zrangebylex('sortedkey', '[d', '[a', 'lame', 1, 2); }
       expect(testfn).to.throw('syntax');
     });
 
@@ -1585,6 +1669,20 @@ describe('Memory Cache', () => {
       expect(val[1]).to.be.equal('lame');
     });
 
+    it('zrangebyscore (all with limit withscores)', () => {
+      let val = client.zrangebyscore('sortedkey', '-inf', '+inf', 'withscores', 'limit', 1, 2);
+      expect(val.length).to.be.equal(4);
+      expect(val[0]).to.be.equal('lame2');
+      expect(val[2]).to.be.equal('lame');
+    });
+
+    it('zrangebyscore (all withscores)', () => {
+      let val = client.zrangebyscore('sortedkey', '-inf', '+inf', 'withscores');
+      expect(val.length).to.be.equal(6);
+      expect(val[0]).to.be.equal('other');
+      expect(val[4]).to.be.equal('lame');
+    });
+
     it('zrangebyscore (exclusive range)', () => {
       let val = client.zrangebyscore('sortedkey', '(1.0', '(2.0');
       expect(val.length).to.be.equal(1);
@@ -1629,18 +1727,23 @@ describe('Memory Cache', () => {
       });
     });
 
+    it('zrevrange (bad parameter count)', () => {
+      let testfn = () => { client.zrevrange('sortedkey', 'd', 2, 'lame', 'lame'); }
+      expect(testfn).to.throw('syntax');
+    });
+
     it('zrevrange (bad range start)', () => {
-      let testfn = () => { client.zrevrange('sortedkey', 'd', 2) };
+      let testfn = () => { client.zrevrange('sortedkey', 'd', 2); }
       expect(testfn).to.throw('integer');
     });
 
     it('zrevrange (bad range end)', () => {
-      let testfn = () => { client.zrevrange('sortedkey', 1, 'd') };
+      let testfn = () => { client.zrevrange('sortedkey', 1, 'd'); }
       expect(testfn).to.throw('integer');
     });
 
     it('zrevrange (bad params)', () => {
-      let testfn = () => { client.zrevrange('sortedkey', 1, 2, 'lame') };
+      let testfn = () => { client.zrevrange('sortedkey', 1, 2, 'lame'); }
       expect(testfn).to.throw('syntax');
     });
 
@@ -1650,7 +1753,7 @@ describe('Memory Cache', () => {
     });
 
     it('zrevrange (all)', () => {
-      let val = client.zrevrange('sortedkey', 0, -1);
+      let val = client.zrevrange('sortedkey', 0, 100);
       expect(val.length).to.be.equal(3);
       expect(val[0]).to.be.equal('lame');
       expect(val[2]).to.be.equal('other');
@@ -1664,7 +1767,7 @@ describe('Memory Cache', () => {
     });
 
     it('zrevrange (with scores)', () => {
-      let val = client.zrevrange('sortedkey', 0, 1, "withscores");
+      let val = client.zrevrange('sortedkey', -100, 1, "withscores");
       expect(val.length).to.be.equal(4);
       expect(val[0]).to.be.equal('lame');
       expect(val[2]).to.be.equal('lame2');
@@ -1689,8 +1792,13 @@ describe('Memory Cache', () => {
       expect(testfn).to.throw('not valid string');
     });
 
-    it('zrevrangebylex (bad params)', () => {
+    it('zrevrangebylex (bad params count)', () => {
       let testfn = () => { client.zrevrangebylex('sortedkey', '[d', '[a', 'lame'); }
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('zrevrangebylex (bad params)', () => {
+      let testfn = () => { client.zrevrangebylex('sortedkey', '[d', '[a', 'lame', 1, 2); }
       expect(testfn).to.throw('syntax');
     });
 
@@ -1810,6 +1918,20 @@ describe('Memory Cache', () => {
       expect(val[1]).to.be.equal('other');
     });
 
+    it('zrevrangebyscore (all with limit withscores)', () => {
+      let val = client.zrevrangebyscore('sortedkey', '+inf', '-inf', 'withscores', 'limit', 1, 2);
+      expect(val.length).to.be.equal(4);
+      expect(val[0]).to.be.equal('lame2');
+      expect(val[2]).to.be.equal('other');
+    });
+
+    it('zrevrangebyscore (all withscores)', () => {
+      let val = client.zrevrangebyscore('sortedkey', '+inf', '-inf', 'withscores');
+      expect(val.length).to.be.equal(6);
+      expect(val[0]).to.be.equal('lame');
+      expect(val[4]).to.be.equal('other');
+    });
+
     it('zrevrangebyscore (exclusive range)', () => {
       let val = client.zrevrangebyscore('sortedkey', '(2.0', '(1.0');
       expect(val.length).to.be.equal(1);
@@ -1901,6 +2023,12 @@ describe('Memory Cache', () => {
       });
     });
 
+    it('zremrangebylex (bad key type)', () => {
+      client.set('strkey', 'lame');
+      let testfn = () => { client.zremrangebylex('strkey', '(f', '(gz'); }
+      expect(testfn).to.throw('WRONGTYPE');
+    });
+
     it('zremrangebylex', () => {
       client.zadd('sortedkey', 3, 'fantastic');
       client.zadd('sortedkey', 4, 'beautiful');
@@ -1919,6 +2047,11 @@ describe('Memory Cache', () => {
         expect(res).to.be.equal(3);
         done();
       });
+    });
+
+    it('zremrangebyrank (bad key type)', () => {
+      let testfn = () => { client.zremrangebyrank('strkey', -2, -1); }
+      expect(testfn).to.throw('WRONGTYPE');
     });
 
     it('zremrangebyrank', () => {
@@ -1943,6 +2076,11 @@ describe('Memory Cache', () => {
         expect(val).to.not.include.members(['good', 'great']);
         done();
       });
+    });
+
+    it('zremrangebyscore (bad key type)', () => {
+      let testfn = () => { client.zremrangebyscore('strkey', '4', '6'); }
+      expect(testfn).to.throw('WRONGTYPE');
     });
 
     it('zremrangebyscore', () => {
@@ -1984,6 +2122,11 @@ describe('Memory Cache', () => {
 
     it('set (bad expiration [no int])', () => {
       let testfn = () => { client.set('strkey2', 'chuff', 'ex', 'px'); }
+      expect(testfn).to.throw('integer');
+    });
+
+    it('set (bad milli expiration [no int])', () => {
+      let testfn = () => { client.set('strkey2', 'chuff', 'px', 'ex'); }
       expect(testfn).to.throw('integer');
     });
 
@@ -2093,14 +2236,29 @@ describe('Memory Cache', () => {
       expect(val).to.be.equal(4);
     });
 
+    it('bitcount (with start before beginning)', () => {
+      let val = client.bitcount('strkey', -100, 100);
+      expect(val).to.be.equal(8);
+    });
+
+    it('bitcount (with end beyond length)', () => {
+      let val = client.bitcount('strkey', 14, 100);
+      expect(val).to.be.equal(4);
+    });
+
     it('bitcount with callback', (done) => {
-      client.bitcount('strkey', (err, res) => {
+      client.bitcount('strkey', -48, -2, (err, res) => {
         expect(res).to.be.equal(8);
         done();
       });
     });
 
-    it('bitop (bad opertator)', () => {
+    it('bitop (no source key)', () => {
+      let testfn = () => { client.bitop('not', 'bitop'); }
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('bitop (bad operator)', () => {
       let testfn = () => { client.bitop('wacky', 'bitop', 'bitop1', 'bitop2'); }
       expect(testfn).to.throw('syntax');
     });
@@ -2151,6 +2309,11 @@ describe('Memory Cache', () => {
       });
     });
 
+    it('decr (bad key type)', () => {
+      let testfn = () => { client.decr('strkey'); }
+      expect(testfn).to.throw('integer');
+    });
+
     it('decr (non-existing)', () => {
       let val = client.decr('numkey');
       expect(val).to.be.equal(-1);
@@ -2166,6 +2329,11 @@ describe('Memory Cache', () => {
         expect(res).to.be.equal(-3);
         done();
       });
+    });
+
+    it('decrby (bad value)', () => {
+      let testfn = () => { client.decrby('numkey3', 'f'); }
+      expect(testfn).to.throw('integer');
     });
 
     it('decrby (non-existing)', () => {
@@ -2191,11 +2359,11 @@ describe('Memory Cache', () => {
     });
 
     it('getbit (out of range)', () => {
-      let val = client.getbit('strkey', 50);
+      let val = client.getbit('strkey', 100);
       expect(val).to.be.equal(0);
     });
 
-    it('getbit (out of range)', () => {
+    it('getbit', () => {
       let val = client.getbit('strkey', 1);
       expect(val).to.be.equal(1);
     });
@@ -2223,7 +2391,7 @@ describe('Memory Cache', () => {
     });
 
     it('getrange with callback', (done) => {
-      client.getrange('strkey', 1, -1, (err, res) => {
+      client.getrange('strkey', -2, -1, (err, res) => {
         expect(res).to.be.equal('at');
         done();
       })
@@ -2288,6 +2456,16 @@ describe('Memory Cache', () => {
         expect(res).to.be.equal(6);
         done();
       });
+    });
+
+    it('incrbyfloat (non float key)', () => {
+      let testfn = () => { client.incrbyfloat('strkey', 1.11); }
+      expect(testfn).to.throw('float');
+    });
+
+    it('incrbyfloat (bad value)', () => {
+      let testfn = () => { client.incrbyfloat('numkey5', 'f'); }
+      expect(testfn).to.throw('float');
     });
 
     it('incrbyfloat (non-exsiting)', () => {
@@ -2369,6 +2547,11 @@ describe('Memory Cache', () => {
       });
     });
 
+    it('psetex (bad key type)', () => {
+      let testfn = () => { client.psetex('testkey', 100, 123); }
+      expect(testfn).to.throw('WRONGTYPE');
+    });
+
     it('psetex', () => {
       let val = client.psetex('expirekey', 200, '123');
       expect(val).to.be.equal('OK');
@@ -2405,6 +2588,11 @@ describe('Memory Cache', () => {
       });
     });
 
+    it('setex (bad key type)', () => {
+      let testfn = () => { client.setex('testkey', 100, 123); }
+      expect(testfn).to.throw('WRONGTYPE');
+    });
+
     it('setex', () => {
       let val = client.setex('expirekey', 20, '567');
       expect(val).to.be.equal('OK');
@@ -2415,6 +2603,11 @@ describe('Memory Cache', () => {
         expect(res).to.be.equal('OK');
         done();
       });
+    });
+
+    it('setnx (bad key type)', () => {
+      let testfn = () => { client.setnx('testkey', 123); }
+      expect(testfn).to.throw('WRONGTYPE');
     });
 
     it('setnx (existing)', () => {
@@ -2666,6 +2859,16 @@ describe('Memory Cache', () => {
       expect(testfn).to.throw('invalid DB index');
     });
 
+    it('swapdb (non-existing source index)', () => {
+      let testfn = () => { client.swapdb(100, 1); }
+      expect(testfn).to.throw('invalid DB index');
+    });
+
+    it('swapdb (non-existing dest index)', () => {
+      let testfn = () => { client.swapdb(1, 100); }
+      expect(testfn).to.throw('invalid DB index');
+    });
+
     it('swapdb', () => {
       client.set('c', 'd');
       let val = client.swapdb(2, 3);
@@ -2736,7 +2939,7 @@ describe('Memory Cache', () => {
     });
 
     it('geoadd', () => {
-      const testfn = () => { client.readwrite(); };
+      const testfn = () => { client.geoadd(); };
       expect(testfn).to.throw(MemoryCacheError);
     });
 
@@ -2792,6 +2995,11 @@ describe('Memory Cache', () => {
 
     it('object', () => {
       const testfn = () => { client.object(); };
+      expect(testfn).to.throw(MemoryCacheError);
+    });
+
+    it('bitpos', () => {
+      const testfn = () => { client.bitpos(); };
       expect(testfn).to.throw(MemoryCacheError);
     });
 
@@ -2855,6 +3063,16 @@ describe('Memory Cache', () => {
       expect(testfn).to.throw(MemoryCacheError);
     });
 
+    it('eval', () => {
+      const testfn = () => { client.eval(); };
+      expect(testfn).to.throw(MemoryCacheError);
+    });
+
+    it('evalsha', () => {
+      const testfn = () => { client.evalsha(); };
+      expect(testfn).to.throw(MemoryCacheError);
+    });
+
     it('script', () => {
       const testfn = () => { client.script(); };
       expect(testfn).to.throw(MemoryCacheError);
@@ -2872,6 +3090,11 @@ describe('Memory Cache', () => {
 
     it('config', () => {
       const testfn = () => { client.config(); };
+      expect(testfn).to.throw(MemoryCacheError);
+    });
+
+    it('command', () => {
+      const testfn = () => { client.command(); };
       expect(testfn).to.throw(MemoryCacheError);
     });
 
