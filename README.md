@@ -8,7 +8,11 @@
 [![Dependencies badge](https://david-dm.org/MediaXPost/memory-cache/status.svg)](https://david-dm.org/MediaXPost/memory-cache?view=list)
 
 
-`memory-cache` is a simple, Redis-like, in-memory cache written in pure Javascript.  The API is designed to mirror the node [`redis` module](https://www.npmjs.com/package/redis) and can be used with nearly all redis commands supported by Redis.
+`memory-cache` is a simple, Redis-like, in-memory cache written in pure Javascript.  
+
+Memory Cache is designed to be a fully-functional stand-in replacement for mocking Redis and fail-over for when Redis is not available. This is designed to mimic the node [`redis` module](https://www.npmjs.com/package/redis) and can be used with nearly all redis commands supported by Redis<sup>*</sup>.
+
+It has been rigorously tested with over 500 unit test.
 
 # [Installation](#installation)
 <a name="installation"></a>
@@ -48,6 +52,38 @@ Disconnects from the memory cache and emits the `end` event.
 
 ## MemoryCache.end()
 Disconnects from the memory cache and emits the `end` event. Unlike the Redis client this is identical to calling quit.
+
+## Command simplification
+Where possible, this module mimics the return data behavior of the Redis module.  For example, the `.hmset` will accept a single object hash to set multiple fields. Similar `.hmget` will return an object hash.
+
+## Multiple parameters
+Many Redis commands like `set`, `mget`, etc. accept multiple parameters. The memory cache library support passing all additional parameters.
+
+**For example:**
+```js
+  client.mget('key1', 'key2', 'key3', 'key4');
+```
+
+Additionally, if a command is multiple words, then the additional portion of the command may be passed as the first parameter.
+
+**For example:**
+```js
+  client.flushall('async');
+```
+
+## Using Promises
+Every Redis command can be called with `*Async` at the end. This will invoke the Promisified variant of the command and return a Promise.
+
+**For Example:**
+```js
+  client.getAsync('testkey')
+  .then((res) => {
+    // Do something useful
+  })
+  .catch((err) => {
+    // Do something useful
+  });
+```
 
 ## Redis Commands
 MemoryCache support all but a select few [Redis Commands](https://redis.io/commands) and returns then data as close to identically as possible to the [`redis` module](https://www.npmjs.com/package/redis). Any errors are thrown as exceptions which should be caught.  The commands which are unavailable are as follows:
@@ -101,7 +137,7 @@ MemoryCache support all but a select few [Redis Commands](https://redis.io/comma
 * ZSCAN
 * ZUNIONSTORE
 
-If an unavailable command is issued, then the module throws a "MemoryCache does not support that operation" exception, unless the option `bypassUnsupported` is set to `true` in the constructor.
+If an unavailable command is issued, then the module throws a MemoryCacheError -- "MemoryCache does not support that operation". This thrown error can be bypassed by passing the option `bypassUnsupported` as true in the constructor.  Or by directly setting your MemoryCache instance `instance.options.bypassUnsupported = true`
 
 # [License](#license)
 <a name="license"></a>
