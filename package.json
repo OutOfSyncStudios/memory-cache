@@ -1,6 +1,6 @@
 {
   "name": "@mediaxpost/memory-cache",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "A Promise-based, simple, Redis-like, in-memory cache written in pure Javascript",
   "main": "index.js",
   "scripts": {
@@ -16,9 +16,13 @@
     "url": "git+https://chronosis@github.com/MediaXPost/memory-cache.git"
   },
   "keywords": [
-    "lodash",
-    "extension",
-    "utility"
+    "memory",
+    "memory-based",
+    "cache",
+    "redis",
+    "mock",
+    "stand-in",
+    "fail-over"    
   ],
   "author": "Jay Reardon",
   "license": "MIT",
@@ -27,7 +31,7 @@
   },
   "homepage": "https://github.com/MediaXPost/memory-cache#readme",
   "dependencies": {
-    "@mediaxpost/lodashext": "^1.0.0",
+    "@mediaxpost/lodashext": "^1.1.0",
     "bluebird": "^3.5.1"
   },
   "devDependencies": {
@@ -38,6 +42,7 @@
     "gulp-eslint": "^4.0.1",
     "gulp-mocha": "^5.0.0",
     "gulp-prettier": "^1.1.0",
+    "lolex": "^2.3.2",
     "mocha": "^5.0.0",
     "nyc": "^11.4.1",
     "prettier": "^1.10.2"
