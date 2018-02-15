@@ -3131,6 +3131,139 @@ describe('Memory Cache', () => {
     });
   });
 
+  describe('Geo', () => {
+    it('geoadd (bad param count -- too few)', () => {
+      const testfn = () => {
+        client.geoadd('geokey');
+      };
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('geoadd (bad param count -- too many)', () => {
+      const testfn = () => {
+        client.geoadd('geokey', 30.3, 30.3, 'place', 12);
+      };
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('geoadd (bad longitude)', () => {
+      const testfn = () => {
+        client.geoadd('geokey', 'as', 30.3, 'place');
+      };
+      expect(testfn).to.throw('float');
+    });
+
+    it('geoadd (bad latitude)', () => {
+      const testfn = () => {
+        client.geoadd('geokey', 30.3, 'as', 'place');
+      };
+      expect(testfn).to.throw('float');
+    });
+
+    it('geoadd', () => {
+      const val = client.geoadd('geokey', 30.3, 30.3, 'place', 35.5, 35.5, 'place2');
+      expect(val).to.be.equal(2);
+    });
+
+    it('geoadd with callback', (done) => {
+      client.geoadd('geokey', 33.3, 33.3, 'place3', (err, res) => {
+        expect(res).to.be.equal(1);
+        done();
+      });
+    });
+
+    it('geodist (bad param count -- too many)', () => {
+      const testfn = () => {
+        client.geodist('geokey', 'place', 'place2', 'a', 'b');
+      };
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('geodist (bad param conversion)', () => {
+      const testfn = () => {
+        client.geodist('geokey', 'place', 'place2', 'a');
+      };
+      expect(testfn).to.throw('syntax');
+    });
+
+    it('geodist', () => {
+      const val = client.geodist('geokey', 'place', 'place2');
+      expect(val).to.be.equal(754221);
+    });
+
+    it('geodist with km conversion', () => {
+      const val = client.geodist('geokey', 'place', 'place2', 'km');
+      expect(val).to.be.equal(754.221);
+    });
+
+    it('geodist with mi conversion', () => {
+      const val = client.geodist('geokey', 'place', 'place2', 'mi');
+      expect(val).to.be.equal(468.6512019804342);
+    });
+
+    it('geodist with ft conversion', () => {
+      const val = client.geodist('geokey', 'place', 'place2', 'ft');
+      expect(val).to.be.equal(2474478.42564);
+    });
+
+    it('geodist with callback', (done) => {
+      client.geodist('geokey', 'place', 'place2', (err, res) => {
+        expect(res).to.be.equal(754221);
+        done();
+      });
+    });
+
+    it('geohash (bad param count -- too few)', () => {
+      const testfn = () => { client.geohash(); };
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('geohash (non-existing key)', () => {
+      const val = client.geohash('bad', 'member');
+      expect(val.length).to.be.equal(1);
+      expect(val).to.include.members([null]);
+    });
+
+    it('geohash', () => {
+      const val = client.geohash('geokey', 'place', 'member');
+      expect(val.length).to.be.equal(2);
+      expect(val).to.include.members([null, 'stms37zy3']);
+    });
+
+    it('geohash with callback', (done) => {
+      client.geohash('geokey', 'place', 'member', (err, res) => {
+        expect(res.length).to.be.equal(2);
+        expect(res).to.include.members([null, 'stms37zy3']);
+        done();
+      });
+    });
+
+    it('geopos (bad param count -- too few)', () => {
+      const testfn = () => { client.geopos(); };
+      expect(testfn).to.throw('wrong number');
+    });
+
+    it('geopos', () => {
+      const val = client.geopos('geokey', 'place', 'member');
+      expect(val.length).to.be.equal(2);
+      expect(val[1]).to.be.equal(null);
+      expect(val[0].length).to.be.equal(2);
+      expect(val[0][0]).to.be.closeTo(30.3, 30.3 * 0.005);
+      expect(val[0][1]).to.be.closeTo(30.3, 30.3 * 0.005);
+    });
+
+    it('geopos with callback', (done) => {
+      client.geopos('geokey', 'place', 'member', (err, res) => {
+        expect(res.length).to.be.equal(2);
+        expect(res[1]).to.be.equal(null);
+        expect(res[0].length).to.be.equal(2);
+        expect(res[0][0]).to.be.closeTo(30.3, 30.3 * 0.005);
+        expect(res[0][1]).to.be.closeTo(30.3, 30.3 * 0.005);
+        done();
+      });
+    });
+  });
+
   describe('Unsupported', () => {
     it('cluster', () => {
       const testfn = () => {
@@ -3149,34 +3282,6 @@ describe('Memory Cache', () => {
     it('readwrite', () => {
       const testfn = () => {
         client.readwrite();
-      };
-      expect(testfn).to.throw(MemoryCacheError);
-    });
-
-    it('geoadd', () => {
-      const testfn = () => {
-        client.geoadd();
-      };
-      expect(testfn).to.throw(MemoryCacheError);
-    });
-
-    it('geodist', () => {
-      const testfn = () => {
-        client.geodist();
-      };
-      expect(testfn).to.throw(MemoryCacheError);
-    });
-
-    it('geohash', () => {
-      const testfn = () => {
-        client.geohash();
-      };
-      expect(testfn).to.throw(MemoryCacheError);
-    });
-
-    it('geopos', () => {
-      const testfn = () => {
-        client.geopos();
       };
       expect(testfn).to.throw(MemoryCacheError);
     });

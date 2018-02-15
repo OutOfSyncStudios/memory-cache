@@ -24,4 +24,6 @@ memCache.zadd('sortedkey', 5, 'good');
 memCache.zadd('sortedkey', 6, 'great');
 val = memCache.zremrangebyscore('sortedkey', '4', '6');
 
+memCache.geoadd('test', 30.3, 30.3, 'place', 35.5, 35.5, 'place2');
+val = memCache.geodist('test', 'place', 'place2', 'km');
 console.log(val);
