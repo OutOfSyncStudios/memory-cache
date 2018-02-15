@@ -16,9 +16,13 @@
     "url": "git+https://chronosis@github.com/MediaXPost/memory-cache.git"
   },
   "keywords": [
-    "lodash",
-    "extension",
-    "utility"
+    "memory",
+    "memory-based",
+    "cache",
+    "redis",
+    "mock",
+    "stand-in",
+    "fail-over"    
   ],
   "author": "Jay Reardon",
   "license": "MIT",

@@ -10,9 +10,11 @@
 
 `memory-cache` is a simple, Redis-like, in-memory cache written in pure Javascript.  
 
-Memory Cache is designed to be a fully-functional stand-in replacement for mocking Redis and fail-over for when Redis is not available. This is designed to mimic the node [`redis` module](https://www.npmjs.com/package/redis) and can be used with nearly all redis commands supported by Redis<sup>*</sup>.
+Memory Cache is designed to be a fully-functional stand-in replacement for mocking Redis and fail-over in production systems for when Redis is not available. This package is intentionally designed to mimic the behavior of the node [`redis` module](https://www.npmjs.com/package/redis) and can be used with [nearly all commands supported by Redis](#commands)<sup>†</sup>.
 
 It has been rigorously tested with over 500 unit test.
+
+† [See below](#commands)
 
 # [Installation](#installation)
 <a name="installation"></a>
@@ -86,6 +88,8 @@ Every Redis command can be called with `*Async` at the end. This will invoke the
 ```
 
 ## Redis Commands
+<a name="commands"></a>
+
 MemoryCache support all but a select few [Redis Commands](https://redis.io/commands) and returns then data as close to identically as possible to the [`redis` module](https://www.npmjs.com/package/redis). Any errors are thrown as exceptions which should be caught.  The commands which are unavailable are as follows:
 
 * BGREWRITEAOF
