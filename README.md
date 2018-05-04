@@ -9,7 +9,6 @@
 [![Codacy Coverage Badge](https://api.codacy.com/project/badge/Coverage/13d3b0cb546f42dd93fb9b831a3b175c)](https://www.codacy.com/app/chronosis/memory-cache?utm_source=github.com&utm_medium=referral&utm_content=MediaXPost/memory-cache&utm_campaign=Badge_Coverage)
 [![Dependencies badge](https://david-dm.org/MediaXPost/memory-cache/status.svg)](https://david-dm.org/MediaXPost/memory-cache?view=list)
 
-
 `memory-cache` is a simple, Redis-like, in-memory cache written in pure Javascript.  
 
 Memory Cache is designed to be a fully-functional stand-in replacement for mocking Redis and fail-over in production systems for when Redis is not available. This package is intentionally designed to mimic the behavior of the node [`redis` module](https://www.npmjs.com/package/redis) and can be used with [nearly all commands supported by Redis](#commands)<sup>†</sup>.

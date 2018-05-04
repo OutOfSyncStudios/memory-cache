@@ -2727,7 +2727,7 @@ describe('Memory Cache', () => {
     });
 
     it('msetnx with callback', (done) => {
-      client.msetnx('newstrkey4', 'racooon', 'newstrkey5', 'bison', (err, res) => {
+      client.msetnx('newstrkey4', 'raccoon', 'newstrkey5', 'bison', (err, res) => {
         expect(res).to.be.equal(1);
         done();
       });
