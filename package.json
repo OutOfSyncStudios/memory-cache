@@ -1,6 +1,6 @@
 {
   "name": "@mediaxpost/memory-cache",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "description": "A Promise-based, simple, Redis-like, in-memory cache written in pure Javascript",
   "main": "index.js",
   "scripts": {
@@ -45,6 +45,7 @@
     "ngeohash": "^0.6.0"
   },
   "devDependencies": {
+    "ast-types": "^0.11.3",
     "chai": "^4.1.2",
     "codacy-coverage": "^2.1.1",
     "eslint": "^4.19.1",
