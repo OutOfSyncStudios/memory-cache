@@ -161,7 +161,7 @@ class MemoryCache extends Event {
       if (isNaN(long) || isNaN(lat)) {
         return this._handleCallback(callback, null, messages.nofloat);
       }
-      let hashint = geohash.encode_int(lat, long);
+      const hashint = geohash.encode_int(lat, long);
       data.push(hashint);
       name = params.shift();
       data.push(name);
@@ -207,9 +207,9 @@ class MemoryCache extends Event {
         return this._handleCallback(callback, null, messages.noint);
       }
 
-      let point1 = geohash.decode_int(val1);
-      let point2 = geohash.decode_int(val2);
-      let dist = geolib.getDistance(
+      const point1 = geohash.decode_int(val1);
+      const point2 = geohash.decode_int(val2);
+      const dist = geolib.getDistance(
         {
           latitude: point1.latitude,
           longitude: point1.longitude
@@ -227,7 +227,7 @@ class MemoryCache extends Event {
   }
 
   geohash(key, ...members) {
-    let retVal = [];
+    const retVal = [];
     const callback = this._retrieveCallback(members);
     if (members.length < 1) {
       return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'geohash'));
@@ -235,7 +235,7 @@ class MemoryCache extends Event {
 
     let val, point;
     while (members.length > 0) {
-      let member = members.shift();
+      const member = members.shift();
       try {
         val = this.zscore(key, member);
         if (__.hasValue(val)) {
@@ -253,7 +253,7 @@ class MemoryCache extends Event {
   }
 
   geopos(key, ...members) {
-    let retVal = [];
+    const retVal = [];
     const callback = this._retrieveCallback(members);
     if (members.length < 1) {
       return this._handleCallback(callback, null, messages.wrongArgCount.replace('%0', 'geopos'));
@@ -261,7 +261,7 @@ class MemoryCache extends Event {
 
     let val, point;
     while (members.length > 0) {
-      let member = members.shift();
+      const member = members.shift();
       try {
         val = this.zscore(key, member);
         if (__.hasValue(val)) {
