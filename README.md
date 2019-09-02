@@ -1,13 +1,13 @@
 # memory-cache
 
-[![NPM](https://nodei.co/npm/@mediaxpost/memory-cache.png?downloads=true)](https://nodei.co/npm/@mediaxpost/memory-cache/)
+[![NPM](https://nodei.co/npm/@outofsync/memory-cache.png?downloads=true)](https://nodei.co/npm/@outofsync/memory-cache/)
 
-[![Actual version published on npm](http://img.shields.io/npm/v/@mediaxpost/memory-cache.svg)](https://www.npmjs.org/package/@mediaxpost/memory-cache)
-[![Travis build status](https://travis-ci.org/MediaXPost/memory-cache.svg)](https://www.npmjs.org/package/@mediaxpost/memory-cache)
-[![Total npm module downloads](http://img.shields.io/npm/dt/@mediaxpost/memory-cache.svg)](https://www.npmjs.org/package/@mediaxpost/memory-cache)
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/13d3b0cb546f42dd93fb9b831a3b175c)](https://www.codacy.com/app/chronosis/memory-cache?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=MediaXPost/memory-cache&amp;utm_campaign=Badge_Grade)
-[![Codacy Coverage Badge](https://api.codacy.com/project/badge/Coverage/13d3b0cb546f42dd93fb9b831a3b175c)](https://www.codacy.com/app/chronosis/memory-cache?utm_source=github.com&utm_medium=referral&utm_content=MediaXPost/memory-cache&utm_campaign=Badge_Coverage)
-[![Dependencies badge](https://david-dm.org/MediaXPost/memory-cache/status.svg)](https://david-dm.org/MediaXPost/memory-cache?view=list)
+[![Actual version published on npm](http://img.shields.io/npm/v/@outofsync/memory-cache.svg)](https://www.npmjs.org/package/@outofsync/memory-cache)
+[![Travis build status](https://travis-ci.org/OutOfSyncStudios/memory-cache.svg)](https://www.npmjs.org/package/@outofsync/memory-cache)
+[![Total npm module downloads](http://img.shields.io/npm/dt/@outofsync/memory-cache.svg)](https://www.npmjs.org/package/@outofsync/memory-cache)
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/13d3b0cb546f42dd93fb9b831a3b175c)](https://www.codacy.com/app/OutOfSyncStudios/memory-cache?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=OutOfSyncStudios/memory-cache&amp;utm_campaign=Badge_Grade)
+[![Codacy Coverage Badge](https://api.codacy.com/project/badge/Coverage/13d3b0cb546f42dd93fb9b831a3b175c)](https://www.codacy.com/app/OutOfSyncStudios/memory-cache?utm_source=github.com&utm_medium=referral&utm_content=OutOfSyncStudios/memory-cache&utm_campaign=Badge_Coverage)
+[![Dependencies badge](https://david-dm.org/OutOfSyncStudios/memory-cache/status.svg)](https://david-dm.org/OutOfSyncStudios/memory-cache?view=list)
 
 `memory-cache` is a simple, Redis-like, in-memory cache written in pure Javascript.  
 
@@ -21,14 +21,14 @@ Unlike some other Redis mocking library, thought has been put into achieving ful
 <a name="installation"></a>
 
 ```shell
-npm install @mediaxpost/memory-cache
+npm install @outofsync/memory-cache
 ```
 
 # [Usage](#usage)
 <a name="usage"></a>
 
 ```js
-const MemoryCache = require('@mediaxpost/memory-cache');
+const MemoryCache = require('@outofsync/memory-cache');
 const client = new MemoryCache({ bypassUnsupported: true });
 
 client.createClient();
@@ -43,7 +43,7 @@ client.get("TestKey");
 Create a new MemoryCache client with the passed options. MemoryCache only supports one option `bypassUnsupported` which if set `true` causes any unsupported commands to fail silently instead of throwing an error.
 
 ```js
-const MemoryCache = require('@mediaxpost/memory-cache');
+const MemoryCache = require('@outofsync/memory-cache');
 const client = new MemoryCache({ bypassUnsupported: true });
 ```
 
@@ -143,4 +143,5 @@ If an unavailable command is issued, then the module throws a MemoryCacheError -
 # [License](#license)
 <a name="license"></a>
 
-Copyright (c) 2018 Jay Reardon -- Licensed under the MIT license.
+Copyright (c) 2018, 2019 Jay Reardon
+Copyright (c) 2019 Out of Sync Studios LLC -- Licensed under the MIT license.
