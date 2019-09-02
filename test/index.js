@@ -3188,27 +3188,27 @@ describe('Memory Cache', () => {
 
     it('geodist', () => {
       const val = client.geodist('geokey', 'place', 'place2');
-      expect(val).to.be.equal(754221);
+      expect(val).to.be.equal(755570);
     });
 
     it('geodist with km conversion', () => {
       const val = client.geodist('geokey', 'place', 'place2', 'km');
-      expect(val).to.be.equal(754.221);
+      expect(val).to.be.equal(755.57);
     });
 
     it('geodist with mi conversion', () => {
       const val = client.geodist('geokey', 'place', 'place2', 'mi');
-      expect(val).to.be.equal(468.6512019804342);
+      expect(val).to.be.equal(469.48943171876243);
     });
 
     it('geodist with ft conversion', () => {
       const val = client.geodist('geokey', 'place', 'place2', 'ft');
-      expect(val).to.be.equal(2474478.42564);
+      expect(val).to.be.equal(2478904.2788);
     });
 
     it('geodist with callback', (done) => {
       client.geodist('geokey', 'place', 'place2', (err, res) => {
-        expect(res).to.be.equal(754221);
+        expect(res).to.be.equal(755570);
         done();
       });
     });

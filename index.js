@@ -1,6 +1,6 @@
 // memory-cache.js
 
-const __ = require('@mediaxpost/lodashext');
+const __ = require('@outofsync/lodash-ex');
 const bluebird = require('bluebird');
 const geohash = require('ngeohash');
 const geolib = require('geolib');
