@@ -1,6 +1,27 @@
 // memory-cache.js
 
-const __ = require('@outofsync/lodash-ex');
+const __ = {
+  difference: require('lodash.difference'),
+  flatten: require('lodash.flatten'),
+  fromPairs: require('lodash.frompairs'),
+  intersection: require('lodash.intersection'),
+  isNil: require('lodash.isnil'),
+  isUndefined: require('lodash.isundefined'),
+  keys: require('lodash.keys'),
+  merge: require('lodash.merge'),
+  mergeWith: require('lodash.mergewith'),
+  padStart: require('lodash.padstart'),
+  padEnd: require('lodash.padend'),
+  pick: require('lodash.pick'),
+  reverse: require('lodash.reverse'),
+  sample: require('lodash.sample'),
+  sampleSize: require('lodash.samplesize'),
+  size: require('lodash.size'),
+  sortBy: require('lodash.sortby'),
+  toPairs: require('lodash.topairs'),
+  union: require('lodash.union'),
+};
+
 const bluebird = require('bluebird');
 const geohash = require('ngeohash');
 const geolib = require('geolib');
@@ -200,7 +221,7 @@ class MemoryCache extends Event {
     let val1 = this.zscore(key, member1);
     let val2 = this.zscore(key, member2);
 
-    if (__.hasValue(val1) && __.hasValue(val2)) {
+    if (!__.isNil(val1) && !__.isNil(val2)) {
       val1 = parseInt(val1);
       val2 = parseInt(val2);
       if (isNaN(val1) || isNaN(val2)) {
@@ -238,7 +259,7 @@ class MemoryCache extends Event {
       const member = members.shift();
       try {
         val = this.zscore(key, member);
-        if (__.hasValue(val)) {
+        if (!__.isNil(val)) {
           point = geohash.decode_int(val);
           retVal.push(geohash.encode(point.latitude, point.longitude));
         } else {
@@ -264,7 +285,7 @@ class MemoryCache extends Event {
       const member = members.shift();
       try {
         val = this.zscore(key, member);
-        if (__.hasValue(val)) {
+        if (!__.isNil(val)) {
           point = geohash.decode_int(val);
           retVal.push([point.longitude, point.latitude]);
         } else {
@@ -475,7 +496,7 @@ class MemoryCache extends Event {
   hstrlen(key, field, callback) {
     let retVal = 0;
     const getVal = this.hget(key, field);
-    if (__.hasValue(getVal)) {
+    if (!__.isNil(getVal)) {
       retVal = getVal.length;
     }
 
@@ -574,7 +595,7 @@ class MemoryCache extends Event {
     const regEx = this._createRegExpGlob(pattern);
     for (const key in this.cache) {
       if (this._hasKey(key)) {
-        if (__.hasValue(key.match(regEx))) {
+        if (!__.isNil(key.match(regEx))) {
           retVals.push(key);
         }
       }
@@ -618,7 +639,7 @@ class MemoryCache extends Event {
   persist(key, callback) {
     let retVal = 0;
     if (this._hasKey(key)) {
-      if (__.hasValue(this._key(key).timeout)) {
+      if (!__.isNil(this._key(key).timeout)) {
         this._key(key).timeout = null;
         retVal = 1;
       }
@@ -648,7 +669,7 @@ class MemoryCache extends Event {
   pttl(key, callback) {
     let retVal = -2;
     if (this._hasKey(key)) {
-      if (__.hasValue(this.cache[key].timeout)) {
+      if (!__.isNil(this.cache[key].timeout)) {
         retVal = this.cache[key].timeout - Date.now();
         // Prevent unexpected errors if the actual ttl just happens to be -2 or -1
         if (retVal < 0 && retVal > -3) {
@@ -694,7 +715,7 @@ class MemoryCache extends Event {
   }
 
   restore(key, ttl, value, replace, callback) {
-    replace = __.bool(replace);
+    replace = !!(replace);
     ttl = ttl || 0;
     if (this._hasKey(key) && !replace) {
       return this._handleCallback(callback, null, messages.busykey);
@@ -795,7 +816,7 @@ class MemoryCache extends Event {
 
   linsert(key, before, pivot, value, callback) {
     let retVal = -1;
-    before = __.hasValue(before) ? before : true;
+    before = !__.isNil(before) ? before : true;
     if (this._hasKey(key)) {
       this._testType(key, 'list', true, callback);
       const length = this._getKey(key).length || 0;
@@ -1326,7 +1347,7 @@ class MemoryCache extends Event {
 
   srandmember(key, count, callback) {
     let retVal = [];
-    const nullBehavior = __.isUnset(count);
+    const nullBehavior = __.isNil(count);
     count = count || 1;
     count = parseInt(count);
     if (isNaN(count)) {
@@ -1565,7 +1586,7 @@ class MemoryCache extends Event {
 
   zincrby(key, increment, member, callback) {
     const incr = parseFloat(increment);
-    if (isNaN(incr) || __.isUnset(incr)) {
+    if (isNaN(incr) || __.isNil(incr)) {
       return this._handleCallback(callback, null, messages.nofloat);
     }
 
@@ -2594,7 +2615,7 @@ class MemoryCache extends Event {
       }
     }
 
-    if (__.hasValue(ttl) && __.hasValue(pttl)) {
+    if (!__.isNil(ttl) && !__.isNil(pttl)) {
       return this._handleCallback(callback, null, messages.syntax);
     }
 
@@ -2603,7 +2624,7 @@ class MemoryCache extends Event {
     }
 
     pttl = pttl || ttl * 1000 || null;
-    if (__.hasValue(pttl)) {
+    if (!__.isNil(pttl)) {
       pttl = Date.now() + pttl;
     }
     if (this._hasKey(key)) {
@@ -2635,7 +2656,7 @@ class MemoryCache extends Event {
     bitmask <<= bitoffset;
 
     // Zero-pad the string value (+1 offset length for the current bit to set)
-    if (__.hasValue(getVal)) {
+    if (!__.isNil(getVal)) {
       getVal = __.padEnd(getVal, byteoffset + 1, '\u0000');
     } else {
       getVal = __.padEnd('', byteoffset + 1, '\u0000');
@@ -2688,7 +2709,7 @@ class MemoryCache extends Event {
       getVal = this._getKey(key);
     }
 
-    if (__.hasValue(getVal)) {
+    if (!__.isNil(getVal)) {
       const fullStr = __.padEnd(getVal, offset, '\u0000');
       beginning = fullStr.substr(0, offset);
       end = fullStr.substr(offset + value.length);
@@ -2709,7 +2730,7 @@ class MemoryCache extends Event {
       getVal = this._getKey(key);
     }
 
-    if (__.hasValue(getVal)) {
+    if (!__.isNil(getVal)) {
       retVal = getVal.length;
     }
 
@@ -2798,7 +2819,7 @@ class MemoryCache extends Event {
   }
 
   _testType(key, type, throwError, callback) {
-    throwError = __.hasValue(throwError) ? throwError : false;
+    throwError = !__.isNil(throwError) ? throwError : false;
     const keyType = this._key(key).type;
     if (keyType !== type) {
       if (throwError) {
@@ -2837,7 +2858,7 @@ class MemoryCache extends Event {
   _logReturn(message) {
     if (!__.isUndefined(message)) {
       if (this.multiMode) {
-        if (__.hasValue(this.responseMessages)) {
+        if (!__.isNil(this.responseMessages)) {
           this.responseMessages.push(message);
           if (message === messages.ok) {
             message = messages.queued;
@@ -2852,7 +2873,7 @@ class MemoryCache extends Event {
   _handleCallback(callback, message, error, nolog) {
     let err = error;
     let msg = message;
-    nolog = __.isUnset(nolog) ? true : nolog;
+    nolog = __.isNil(nolog) ? true : nolog;
     if (nolog) {
       err = this._logReturn(error);
       msg = this._logReturn(message);
@@ -2919,7 +2940,7 @@ class MemoryCache extends Event {
     let fieldValue = useFloat ? '0.0' : '0';
     let value = 0;
 
-    if (isNaN(amount) || __.isUnset(amount)) {
+    if (isNaN(amount) || __.isNil(amount)) {
       return this._handleCallback(callback, null, useFloat ? messages.nofloat : messages.noint);
     }
 
@@ -2934,7 +2955,7 @@ class MemoryCache extends Event {
 
     fieldValue = useFloat ? parseFloat(value) : parseInt(value);
     amount = useFloat ? parseFloat(amount) : parseInt(amount);
-    if (isNaN(fieldValue) || __.isUnset(fieldValue)) {
+    if (isNaN(fieldValue) || __.isNil(fieldValue)) {
       return this._handleCallback(callback, null, useFloat ? messages.nofloat : messages.noint);
     }
 
@@ -2968,14 +2989,14 @@ class MemoryCache extends Event {
   _addToKey(key, amount, callback) {
     let keyValue = 0;
 
-    if (isNaN(amount) || __.isUnset(amount)) {
+    if (isNaN(amount) || __.isNil(amount)) {
       return this._handleCallback(callback, null, messages.noint);
     }
 
     if (this._hasKey(key)) {
       this._testType(key, 'string', true, callback);
       keyValue = parseInt(this._getKey(key));
-      if (isNaN(keyValue) || __.isUnset(keyValue)) {
+      if (isNaN(keyValue) || __.isNil(keyValue)) {
         return this._handleCallback(callback, null, messages.noint);
       }
     } else {
