@@ -1,3 +1,4 @@
+/* eslint-disable complexity */
 // memory-cache.js
 
 const __ = {
@@ -1041,7 +1042,7 @@ class MemoryCache extends Event {
   }
 
   // ---------------------------------------
-  // Pub /Sub
+  // Pub/Sub
   // ---------------------------------------
   psubscribe(...params) {
     this._unsupported();

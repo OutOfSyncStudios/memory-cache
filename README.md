@@ -3,13 +3,13 @@
 [![NPM](https://nodei.co/npm/@outofsync/memory-cache.png?downloads=true)](https://nodei.co/npm/@outofsync/memory-cache/)
 
 [![Actual version published on npm](http://img.shields.io/npm/v/@outofsync/memory-cache.svg)](https://www.npmjs.org/package/@outofsync/memory-cache)
-[![Travis build status](https://travis-ci.org/OutOfSyncStudios/memory-cache.svg)](https://www.npmjs.org/package/@outofsync/memory-cache)
+[![Master build](https://github.com/OutOfSyncStudios/memory-cache/actions/workflows/build-master.yml/badge.svg)](https://github.com/OutOfSyncStudios/memory-cache/actions/workflows/build-master.yml)
 [![Total npm module downloads](http://img.shields.io/npm/dt/@outofsync/memory-cache.svg)](https://www.npmjs.org/package/@outofsync/memory-cache)
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/13d3b0cb546f42dd93fb9b831a3b175c)](https://www.codacy.com/app/OutOfSyncStudios/memory-cache?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=OutOfSyncStudios/memory-cache&amp;utm_campaign=Badge_Grade)
-[![Codacy Coverage Badge](https://api.codacy.com/project/badge/Coverage/13d3b0cb546f42dd93fb9b831a3b175c)](https://www.codacy.com/app/OutOfSyncStudios/memory-cache?utm_source=github.com&utm_medium=referral&utm_content=OutOfSyncStudios/memory-cache&utm_campaign=Badge_Coverage)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/13d1b72ce9dd484ba4744265cf3343ab)](https://www.codacy.com/gh/OutOfSyncStudios/memory-cache/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=OutOfSyncStudios/memory-cache&amp;utm_campaign=Badge_Grade)
+[![Codacy Coverate Badge](https://app.codacy.com/project/badge/Coverage/13d1b72ce9dd484ba4744265cf3343ab)](https://www.codacy.com/gh/OutOfSyncStudios/memory-cache/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=OutOfSyncStudios/memory-cache&amp;utm_campaign=Badge_Coverage)
 [![Dependencies badge](https://david-dm.org/OutOfSyncStudios/memory-cache/status.svg)](https://david-dm.org/OutOfSyncStudios/memory-cache?view=list)
 
-`memory-cache` is a simple, Redis-like, in-memory cache written in pure Javascript.  
+`memory-cache` is a simple, Redis-like, in-memory cache written in pure Javascript.
 
 Memory Cache is designed to be a fully-functional stand-in replacement for mocking Redis and fail-over in production systems for when Redis is not available. This package is intentionally designed to mimic the behavior of the node [`redis` module](https://www.npmjs.com/package/redis) and can be used with [nearly all commands supported by Redis](#commands)<sup>†</sup>.
 
@@ -121,6 +121,7 @@ MemoryCache support all but a select few [Redis Commands](https://redis.io/comma
 * PUNSUBSCRIBE
 * READONLY
 * READWRITE
+* REPLICAOF
 * SCAN
 * SCRIPT *
 * SHUTDOWN
