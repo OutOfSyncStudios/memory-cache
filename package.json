@@ -1,6 +1,6 @@
 {
   "name": "@outofsync/memory-cache",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "A Promise-based, simple, Redis-like, in-memory cache written in pure Javascript",
   "main": "index.js",
   "types": "index.d.ts",
@@ -73,7 +73,7 @@
     "gulp": "^4.0.2",
     "gulp-eslint": "^6.0.0",
     "gulp-mocha": "^8.0.0",
-    "gulp-prettier": "^3.0.0",
+    "gulp-prettier": "^4.0.0",
     "lolex": "^6.0.0",
     "mocha": "^9.0.3",
     "nyc": "^15.1.0",
