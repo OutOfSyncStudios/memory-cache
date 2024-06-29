@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [14.x]
+        node-version: [20.x]
         slack-channel: ['build-monitoring']
     steps:
       - name: 'Notify build start'
@@ -36,19 +36,23 @@ jobs:
       - name: 'NPM Test'
         shell: bash
         run: |
-          npm install -g gulp-cli gulp@4
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
           npm config set registry http://registry.npmjs.org
-          npm config set always-auth true
           sudo mkdir ~/.npm || true
           sudo chown -R $USER:$GROUP ~/.npm || true
           sudo chown -R $USER:$GROUP ~/.config || true
           npm ci
-          gulp
-          npm run coverage
+          npm run build
         env:
           NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          CODACY_PROJECT_TOKEN:  ${{ secrets.CODACY_PROJECT_TOKEN }}
+
+      - name: 'Report Coverage to Codacy'
+        uses: codacy/codacy-coverage-reporter-action@v1.3.0
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          # or
+          # api-token: ${{ secrets.CODACY_API_TOKEN }}
+          coverage-reports: ./coverage/lcov.info
 
       - name: Notify slack success
         if: success()
