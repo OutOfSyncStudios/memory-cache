@@ -1,33 +1,12 @@
 /* eslint-disable complexity */
 // memory-cache.js
 
-const __ = {
-  difference: require('lodash.difference'),
-  flatten: require('lodash.flatten'),
-  fromPairs: require('lodash.frompairs'),
-  intersection: require('lodash.intersection'),
-  isNil: require('lodash.isnil'),
-  isUndefined: require('lodash.isundefined'),
-  keys: require('lodash.keys'),
-  merge: require('lodash.merge'),
-  mergeWith: require('lodash.mergewith'),
-  padStart: require('lodash.padstart'),
-  padEnd: require('lodash.padend'),
-  pick: require('lodash.pick'),
-  reverse: require('lodash.reverse'),
-  sample: require('lodash.sample'),
-  sampleSize: require('lodash.samplesize'),
-  size: require('lodash.size'),
-  sortBy: require('lodash.sortby'),
-  toPairs: require('lodash.topairs'),
-  union: require('lodash.union'),
-};
-
-const bluebird = require('bluebird');
-const geohash = require('ngeohash');
-const geolib = require('geolib');
-const Event = require('events');
-const pkg = require('./package.json');
+import bluebird from 'bluebird';
+import geohash from 'ngeohash';
+import geolib from 'geolib';
+import Event from 'node:events';
+import pkg from './package.json'; 
+import __ from './lib/lodash-stub';
 
 const messages = {
   ok: 'OK',
@@ -3084,5 +3063,5 @@ for (const idx in keys) {
   }
 }
 
-module.exports = MemoryCache;
-module.exports.MemoryCacheError = MemoryCacheError;
+export default MemoryCache;
+export { MemoryCacheError };
