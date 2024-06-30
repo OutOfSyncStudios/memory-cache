@@ -1,6 +1,6 @@
 {
   "name": "@outofsync/memory-cache",
-  "version": "1.5.0",
+  "version": "2.0.0",
   "description": "A Promise-based, simple, Redis-like, in-memory cache written in pure Javascript",
   "main": "index.js",
   "types": "index.d.ts",
