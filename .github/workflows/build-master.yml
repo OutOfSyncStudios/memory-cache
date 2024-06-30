@@ -13,6 +13,7 @@ jobs:
       matrix:
         node-version: [20.x]
         slack-channel: ['build-monitoring']
+        npm-registry: ['https://registry.npmjs.org']  
     steps:
       - name: 'Notify build start'
         uses: voxmedia/github-action-slack-notify-build@v1
@@ -37,7 +38,7 @@ jobs:
         shell: bash
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
-          npm config set registry http://registry.npmjs.org
+          npm config set registry ${{ matrix.npm-registry }}
           sudo mkdir ~/.npm || true
           sudo chown -R $USER:$GROUP ~/.npm || true
           sudo chown -R $USER:$GROUP ~/.config || true
@@ -50,8 +51,6 @@ jobs:
         uses: codacy/codacy-coverage-reporter-action@v1.3.0
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-          # or
-          # api-token: ${{ secrets.CODACY_API_TOKEN }}
           coverage-reports: ./coverage/lcov.info
 
       - name: 'NPM Publish'
