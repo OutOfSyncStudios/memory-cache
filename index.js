@@ -5,8 +5,8 @@ import bluebird from 'bluebird';
 import geohash from 'ngeohash';
 import geolib from 'geolib';
 import Event from 'node:events';
-import pkg from './package.json'; 
-import __ from './lib/lodash-stub';
+import __ from './lib/lodash-stub.js';
+import pkg from './package.json' assert { type : 'json' };
 
 const messages = {
   ok: 'OK',
